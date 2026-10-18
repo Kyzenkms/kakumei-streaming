@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { api } from '../../api';
+import { api, prefetchSources } from '../../api';
 import { IMG, IMG_LARGE } from '../../theme';
 import { usePrefs } from '../../prefs';
 import { loadRecent } from '../../recent';
@@ -41,7 +41,7 @@ export default function HomeScreen() {
             <Text style={styles.heroTitle}>{heroTitle}</Text>
             {!!hero.overview && <Text numberOfLines={3} style={[styles.heroOverview, { color: t.secondary }]}>{String(hero.overview)}</Text>}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-              <Pressable onPress={() => router.push(`/play/movie/${hero.id}?expectedTitle=${encodeURIComponent(heroTitle)}` as any)} style={[styles.heroBtn, { backgroundColor: t.play }]}>
+              <Pressable onPress={() => { prefetchSources({ id: String(hero.id), type: 'movie', title: heroTitle }).catch(() => {}); router.push(`/play/movie/${hero.id}?expectedTitle=${encodeURIComponent(heroTitle)}` as any); }} style={[styles.heroBtn, { backgroundColor: t.play }]}>
                 <Text style={styles.heroBtnText}>▶ Play</Text>
               </Pressable>
               <Pressable onPress={() => router.push(`/details/movie/${hero.id}` as any)} style={[styles.heroBtnGhost, { borderColor: t.border }]}>
@@ -76,8 +76,12 @@ function ContinueCard({ item }: { item: any }) {
   const img = item.poster_path || item.backdrop_path;
   const uri = img ? (String(img).startsWith('http') ? String(img) : `${IMG}${img}`) : null;
   const route = `/play/${type}/${item.id}?expectedTitle=${encodeURIComponent(title)}${item.language ? `&language=${encodeURIComponent(item.language)}` : ''}${item.isNetMirror ? '&netmirror=true' : ''}`;
+  const onPlay = () => {
+    prefetchSources({ id: String(item.id), type, title, language: item.language || '', isNetMirror: !!item.isNetMirror }).catch(() => {});
+    router.push(route as any);
+  };
   return (
-    <Pressable onPress={() => router.push(route as any)} style={[styles.ccard, { borderColor: t.border, backgroundColor: t.surface }]}>
+    <Pressable onPress={onPlay} style={[styles.ccard, { borderColor: t.border, backgroundColor: t.surface }]}>
       {uri ? <Image source={{ uri }} style={styles.cimg} /> : <View style={[styles.cimg, { backgroundColor: t.surface2 }]} />}
       {item.language ? (
         <View style={styles.clang}><Text style={styles.clangText}>{String(item.language).toUpperCase().slice(0, 8)}</Text></View>

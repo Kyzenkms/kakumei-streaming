@@ -142,6 +142,28 @@ function cleanId(id: string): string {
   return String(id || '').split('_')[0];
 }
 
+type SourcesOpts = {
+  id: string; type: string; season?: number; episode?: number;
+  title?: string; language?: string; isNetMirror?: boolean; fresh?: boolean;
+};
+
+// Prefetch stream resolution on play taps — the play screen consumes the same
+// promise, so navigation lands on a ready player instead of "Starting server…".
+const sourcesCache = new Map<string, Promise<any>>();
+function sourcesCacheKey(o: SourcesOpts): string {
+  return [o.id, o.type, o.season || 1, o.episode || 1, o.title || '', o.language || '', o.isNetMirror ? 1 : 0].join('|');
+}
+export function prefetchSources(o: SourcesOpts): Promise<any> {
+  const key = sourcesCacheKey(o);
+  const hit = sourcesCache.get(key);
+  if (hit) return hit;
+  const p = api.sources(o);
+  sourcesCache.set(key, p);
+  p.catch(() => { sourcesCache.delete(key); })
+    .then(() => { setTimeout(() => sourcesCache.delete(key), 120000); });
+  return p;
+}
+
 // Filled from the backend's /api/netmirror/cdns at runtime — keep no hardcoded
 // CDN referer/host list in the client.
 let _cdnCfg: { referer: string; gatedHosts: string[] } = { referer: '', gatedHosts: [] };

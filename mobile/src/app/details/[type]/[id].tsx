@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../../../api';
+import { api, prefetchSources } from '../../../api';
 import { IMG_LARGE } from '../../../theme';
 import { usePrefs } from '../../../prefs';
 import { PosterCard } from '../../../components/PosterCard';
@@ -96,6 +96,10 @@ export default function DetailsScreen() {
   const runtime = media.runtime ? `${Math.floor(media.runtime / 60)}h ${media.runtime % 60}m` : epRuntime ? `${epRuntime}m/episode` : null;
   const playUrl = (lang?: string, s?: number, e?: number) =>
     `/play/${type}/${media.id}?expectedTitle=${encodeURIComponent(title)}${lang ? `&language=${encodeURIComponent(lang)}` : ''}${isTV ? `&season=${s || activeSeason}&episode=${e || 1}` : ''}`;
+  const play = (lang?: string, s?: number, e?: number) => {
+    prefetchSources({ id: String(media.id), type, season: isTV ? (s || activeSeason) : 1, episode: isTV ? (e || 1) : 1, title, language: lang || '' }).catch(() => {});
+    router.push(playUrl(lang, s, e) as any);
+  };
 
   return (
     <ScrollView style={{ backgroundColor: t.bg }}>
@@ -113,7 +117,7 @@ export default function DetailsScreen() {
           </View>
         )}
         {!!media.overview && <Text style={[styles.overview, { color: t.secondary }]}>{media.overview}</Text>}
-        <Pressable onPress={() => router.push(playUrl(prefs.dub !== 'original' ? prefs.dub : undefined) as any)} style={[styles.play, { backgroundColor: t.play }]}>
+        <Pressable onPress={() => play(prefs.dub !== 'original' ? prefs.dub : undefined)} style={[styles.play, { backgroundColor: t.play }]}>
           <Text style={[styles.playText, { color: t.onAccent }]}>▶ Play{isTV ? ` S${activeSeason} E1` : ''}</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
@@ -130,7 +134,7 @@ export default function DetailsScreen() {
             <Text style={[styles.h2, { color: t.text }]}>Available dubs</Text>
             <View style={styles.dubRow}>
               {dubs.slice(0, 10).map((d: any) => (
-                <Pressable key={String(d.id)} onPress={() => router.push(playUrl(d.language) as any)} style={[styles.dub, { borderColor: t.border }]}>
+                <Pressable key={String(d.id)} onPress={() => play(d.language)} style={[styles.dub, { borderColor: t.border }]}>
                   <Text style={[styles.dubText, { color: t.secondary }]}>{String(d.language || 'dub').toUpperCase()}</Text>
                 </Pressable>
               ))}
@@ -149,7 +153,7 @@ export default function DetailsScreen() {
               ))}
             </View>
             {episodes.slice(0, 30).map((ep: any) => (
-              <Pressable key={ep.id} onPress={() => router.push(playUrl(undefined, activeSeason, ep.episode_number) as any)} style={[styles.ep, { borderColor: t.border }]}>
+              <Pressable key={ep.id} onPress={() => play(undefined, activeSeason, ep.episode_number)} style={[styles.ep, { borderColor: t.border }]}>
                 <Text style={[styles.epTitle, { color: t.text }]} numberOfLines={1}>E{ep.episode_number} · {ep.name || 'Episode'}</Text>
                 {!!ep.air_date && <Text style={[styles.epSub, { color: t.muted }]}>{ep.air_date}</Text>}
               </Pressable>

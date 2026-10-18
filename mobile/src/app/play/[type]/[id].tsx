@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent, useEventListener } from 'expo';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
+import { api, prefetchSources, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
 import { usePrefs } from '../../../prefs';
 import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
@@ -53,8 +54,9 @@ export default function PlayScreen() {
   const [attempt, setAttempt] = useState(0);
   const [recs, setRecs] = useState<any[]>([]);
   const [dubs, setDubs] = useState<any[]>([]);
-  const [failNote, setFailNote] = useState('');
-  const [showParty, setShowParty] = useState(!!partyCodeParam);
+const [failNote, setFailNote] = useState('');
+const [showParty, setShowParty] = useState(!!partyCodeParam);
+const [fsFull, setFsFull] = useState(false);
   const [inParty, setInParty] = useState(!!party.roomId);
   const [isPartyHost, setIsPartyHost] = useState(party.isHost);
   const [reaction, setReaction] = useState<{ emoji: string; sender: string } | null>(null);
@@ -68,7 +70,7 @@ export default function PlayScreen() {
   useEffect(() => {
     if (!id) return;
     let alive = true;
-    api.sources({ id, type, season, episode, title: expectedTitle, language, isNetMirror: isNetMirrorId, fresh: attempt > 0 })
+    prefetchSources({ id, type, season, episode, title: expectedTitle, language, isNetMirror: isNetMirrorId, fresh: attempt > 0 })
       .then((r) => {
         if (!alive) return;
         const sources = Array.isArray(r?.sources) ? r.sources.filter((s: any) => s && typeof s.url === 'string' && s.url) : [];
@@ -343,7 +345,7 @@ export default function PlayScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: t.bg }]}>
-      <View style={styles.videoWrap}>
+      <View style={[styles.videoWrap, fsFull && styles.videoWrapFull]}>
         {ext && extFor === reqKey ? (
           <WebView source={{ uri: ext.url }} style={styles.videoFill} allowsFullscreenVideo allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
         ) : direct.length ? (
@@ -356,6 +358,8 @@ export default function PlayScreen() {
             title={title}
             subtitle={isTV ? `S${season} E${episode}` : (data.language || language || '').toUpperCase() || undefined}
             insetTop={insets.top}
+            fullscreen={fsFull}
+            onFsChange={setFsFull}
             inParty={inParty}
             isPartyHost={isPartyHost}
             onOpenParty={() => setShowParty(true)}
@@ -523,6 +527,8 @@ type PlayerProps = {
   onSeekEvent: (time: number) => void;
   nextLabel?: string;
   onNext?: () => void;
+  fullscreen?: boolean;
+  onFsChange?: (v: boolean) => void;
 };
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -544,6 +550,7 @@ function fmtTime(sec: number): string {
 function Player({
   ref, src, onFail, autoRecover, title, subtitle, insetTop, inParty, isPartyHost,
   onOpenParty, qualities, subs, onSelectQuality, onPlayPauseEvent, onSeekEvent, nextLabel, onNext,
+  fullscreen = false, onFsChange,
 }: PlayerProps) {
   const { t } = usePrefs();
   const insets = useSafeAreaInsets();
@@ -570,7 +577,6 @@ function Player({
   const [tracks, setTracks] = useState<any[]>([]);
   const [activeTrack, setActiveTrack] = useState<any>(null);
   const [seekHint, setSeekHint] = useState<number | null>(null);
-  const [fsExpanded, setFsExpanded] = useState(false);
   const [nextCancelled, setNextCancelled] = useState(false);
   const [subIdx, setSubIdx] = useState(-1);
   const [fetchedCues, setFetchedCues] = useState<{ url: string; cues: Cue[] } | null>(null);
@@ -585,6 +591,21 @@ function Player({
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { failRef.current = onFail; }, [onFail]);
+
+  // Custom fullscreen — our overlay (subtitles, bars, scrims) rides along and
+  // the device rotates; the system fullscreen would take the whole screen over.
+  useEffect(() => {
+    if (fullscreen) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    }
+  }, [fullscreen]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { onFsChange?.(false); return true; });
+    return () => sub.remove();
+  }, [fullscreen, onFsChange]);
 
   // ── Subtitle engine — custom overlay mirroring the web player's styling ──
   // Default to the first track once subs arrive; honor an explicit user Off.
@@ -780,12 +801,9 @@ function Player({
         ref={videoViewRef}
         style={styles.videoFill}
         player={player}
-        nativeControls={fsExpanded}
+        nativeControls={false}
         allowsPictureInPicture
-        fullscreenOptions={{ enable: true }}
         contentFit="contain"
-        onFullscreenEnter={() => setFsExpanded(true)}
-        onFullscreenExit={() => setFsExpanded(false)}
       />
 
       {/* Tap layer: single tap toggles controls, double tap seeks ±10s. */}
@@ -812,13 +830,13 @@ function Player({
       )}
 
       {subLine ? (
-        <View style={[styles.subOverlay, { bottom: subStyle.position }]} pointerEvents="none">
+        <View style={[styles.subOverlay, { bottom: subStyle.position + (fullscreen ? 78 : 0) }]} pointerEvents="none">
           <Text style={[styles.subText, { fontSize: subStyle.size, color: subStyle.color }]}>{subLine}</Text>
         </View>
       ) : null}
 
       {!!onNext && dur > 0 && dur - pos > 3 && dur - pos <= 45 && !nextCancelled && (
-        <View style={styles.nextChip}>
+        <View style={[styles.nextChip, { bottom: fullscreen ? 140 : 62 }]}>
           <Text style={styles.nextChipText}>Next episode in {Math.ceil(dur - pos)}s</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
             <Pressable onPress={onNext} style={[styles.nextChipBtn, { backgroundColor: t.accent }]}>
@@ -839,7 +857,7 @@ function Player({
         <>
           {/* Top bar */}
           <View style={[styles.topBar, { paddingTop: insetTop + 6 }]}>
-            <Pressable onPress={() => router.back()} hitSlop={10} style={styles.iconBtn}>
+            <Pressable onPress={() => { if (fullscreen) onFsChange?.(false); else router.back(); }} hitSlop={10} style={styles.iconBtn}>
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </Pressable>
             <View style={{ flex: 1 }}>
@@ -908,8 +926,8 @@ function Player({
               <Pressable onPress={() => { try { videoViewRef.current?.startPictureInPicture(); } catch {} }} style={styles.iconBtn} hitSlop={8}>
                 <Ionicons name="browsers-outline" size={20} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { try { videoViewRef.current?.enterFullscreen(); } catch {} }} style={styles.iconBtn} hitSlop={8}>
-                <Ionicons name="expand" size={22} color="#fff" />
+              <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={8}>
+                <Ionicons name={fullscreen ? 'contract' : 'expand'} size={22} color="#fff" />
               </Pressable>
             </View>
           </View>
@@ -1030,6 +1048,7 @@ function Player({
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
+  videoWrapFull: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   videoFill: { width: '100%', height: '100%', backgroundColor: '#000' },
   playerRoot: { flex: 1, position: 'relative' },
   tapLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row' },

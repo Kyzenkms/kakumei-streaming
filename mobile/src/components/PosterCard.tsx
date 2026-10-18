@@ -2,6 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { IMG } from '../theme';
 import { usePrefs } from '../prefs';
+import { prefetchSources } from '../api';
 
 export function PosterCard({ item, width = 110 }: { item: any; width?: number }) {
   const { t } = usePrefs();
@@ -35,8 +36,14 @@ export function PosterCard({ item, width = 110 }: { item: any; width?: number })
   const route = item.isNetMirror
     ? `/play/${isTV ? 'tv' : 'movie'}/${item.id}?netmirror=true&expectedTitle=${encodeURIComponent(title)}`
     : `/details/${isTV ? 'tv' : 'movie'}/${item.id}`;
+  const onPlay = () => {
+    if (item.isNetMirror) {
+      prefetchSources({ id: String(item.id), type: isTV ? 'tv' : 'movie', title, isNetMirror: true }).catch(() => {});
+    }
+    router.push(route as any);
+  };
   return (
-    <Pressable onPress={() => router.push(route as any)} style={{ width }}>
+    <Pressable onPress={onPlay} style={{ width }}>
       {body}
     </Pressable>
   );

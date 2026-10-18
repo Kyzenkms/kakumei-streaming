@@ -36,6 +36,9 @@ lerna-debug.log*
 android/
 ios/
 
+# superseded installers — kept local on dev, never added to public snapshots
+/downloads/kakumei-1.0.4.apk
+
 # dev debris — kept local, never in the public repo
 /.agents/
 /.claude/

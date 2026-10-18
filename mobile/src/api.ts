@@ -135,6 +135,7 @@ export const api = {
   cdns: async () => get<any>(`/api/netmirror/cdns`).catch(() => null),
   sources: async (opts: { id: string; type: string; season?: number; episode?: number; title?: string; language?: string; isNetMirror?: boolean; fresh?: boolean }) =>
     get<any>(`/api/netmirror/sources?id=${opts.id}&type=${opts.type}&season=${opts.season || 1}&episode=${opts.episode || 1}${opts.title ? `&title=${encodeURIComponent(opts.title)}` : ''}${opts.language ? `&language=${encodeURIComponent(opts.language)}` : ''}${opts.isNetMirror ? '&isNetMirror=true' : ''}${opts.fresh ? '&fresh=1' : ''}`),
+  subsFind: async (params: string) => get<any[]>(`/api/netmirror/subs-find?${params}`),
 };
 
 function cleanId(id: string): string {

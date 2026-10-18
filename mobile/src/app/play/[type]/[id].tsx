@@ -3,16 +3,18 @@ import { ActivityIndicator, Modal, PanResponder, Pressable, ScrollView, StyleShe
 import { useLocalSearchParams, router } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent, useEventListener } from 'expo';
+import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, getCdnCfg, loadCdnCfg } from '../../../api';
+import { api, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
 import { usePrefs } from '../../../prefs';
 import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
 import { WatchPartySheet } from '../../../components/WatchPartySheet';
 import { party } from '../../../party/party';
+import { cueTextAt, parseVtt, SUB_COLORS, SUB_POSITIONS, SUB_SIZES, SUB_SYNCS, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
 
 type ExtServer = { key: string; label: string; url: string };
 
@@ -80,6 +82,22 @@ export default function PlayScreen() {
           const title = r.title || expectedTitle || 'Video';
           const entry: any = { id, title, language: r.language || language || '', isTV, type, isNetMirror: isNetMirrorId, expectedTitle: expectedTitle || title, timestamp: Date.now() };
           saveRecent(entry);
+          // Subtitle parity with web/desktop: when the stream ships no subs,
+          // ask the backend finder (OpenSubtitles) once per title/episode.
+          if (!(Array.isArray(r.subtitles) && r.subtitles.length)) {
+            const cleanTitle = String(title).replace(/\s*\[.*?\]/g, '').replace(/\s*S\d+.*$/i, '').trim();
+            if (cleanTitle) {
+              const p = new URLSearchParams({ title: cleanTitle, type, langs: 'en,hi,es,ar,pt,fr,id' });
+              if (isTV) { p.set('season', String(season)); p.set('episode', String(episode)); }
+              api.subsFind(p.toString())
+                .then((subs) => {
+                  if (alive && Array.isArray(subs) && subs.length) {
+                    setData((prev: any) => (prev && !(Array.isArray(prev.subtitles) && prev.subtitles.length) ? { ...prev, subtitles: subs } : prev));
+                  }
+                })
+                .catch(() => {});
+            }
+          }
           if (!isNetMirrorId) {
             api.details(type, id).then((d: any) => {
               if (d?.poster_path || d?.backdrop_path) saveRecent({ ...entry, poster_path: d.poster_path || null, backdrop_path: d.backdrop_path || null });
@@ -303,6 +321,7 @@ export default function PlayScreen() {
   const curLang = String(data.language || language || '').toLowerCase();
   const altDubs = dubs.filter((d: any) => { const dl = String(d?.language || '').toLowerCase(); return dl && dl !== curLang; }).slice(0, 12);
   const qualities = direct.map((s: any, i: number) => ({ label: s.quality || 'Auto', active: i === active }));
+  const subsList: { label?: string; url: string }[] = (Array.isArray(data?.subtitles) ? data.subtitles : []).filter((s: any) => s && typeof s.url === 'string' && s.url);
 
   // Playback failover for the NetMirror CDN path: signed CDN URLs stall or
   // expire mid-watch. Try the next source, then re-resolve fresh (server
@@ -341,6 +360,7 @@ export default function PlayScreen() {
             isPartyHost={isPartyHost}
             onOpenParty={() => setShowParty(true)}
             qualities={qualities}
+            subs={subsList}
             onSelectQuality={(i) => { setActive(i); setFailNote(`Quality: ${direct[i]?.quality || 'Auto'}`); }}
             onPlayPauseEvent={onPlayPauseEvent}
             onSeekEvent={onSeekEvent}
@@ -497,6 +517,7 @@ type PlayerProps = {
   isPartyHost: boolean;
   onOpenParty: () => void;
   qualities: { label: string; active: boolean }[];
+  subs: { label?: string; url: string }[];
   onSelectQuality: (index: number) => void;
   onPlayPauseEvent: (playing: boolean) => void;
   onSeekEvent: (time: number) => void;
@@ -505,6 +526,7 @@ type PlayerProps = {
 };
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const EMPTY_CUES: Cue[] = [];
 
 function fmtTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) sec = 0;
@@ -521,9 +543,10 @@ function fmtTime(sec: number): string {
 /* eslint-disable react-hooks/immutability, react-hooks/refs -- expo-video's player is an imperative object: these controls are its driver, and the ref bridge republishes live playback state for party sync */
 function Player({
   ref, src, onFail, autoRecover, title, subtitle, insetTop, inParty, isPartyHost,
-  onOpenParty, qualities, onSelectQuality, onPlayPauseEvent, onSeekEvent, nextLabel, onNext,
+  onOpenParty, qualities, subs, onSelectQuality, onPlayPauseEvent, onSeekEvent, nextLabel, onNext,
 }: PlayerProps) {
   const { t } = usePrefs();
+  const insets = useSafeAreaInsets();
   const player = useVideoPlayer({ uri: src, contentType: contentTypeFor(src), headers: headersFor(src) } as any, (p) => {
     p.loop = false;
     p.timeUpdateEventInterval = 0.5;
@@ -549,6 +572,11 @@ function Player({
   const [seekHint, setSeekHint] = useState<number | null>(null);
   const [fsExpanded, setFsExpanded] = useState(false);
   const [nextCancelled, setNextCancelled] = useState(false);
+  const [subIdx, setSubIdx] = useState(-1);
+  const [fetchedCues, setFetchedCues] = useState<{ url: string; cues: Cue[] } | null>(null);
+  const [subStyle, setSubStyle] = useState<SubStyle>(SUB_STYLE_DEFAULT);
+  const userOff = useRef(false);
+  const cueCache = useRef(new Map<string, Cue[]>());
   const videoViewRef = useRef<VideoView>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedRef = useRef(false);
@@ -557,6 +585,61 @@ function Player({
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { failRef.current = onFail; }, [onFail]);
+
+  // ── Subtitle engine — custom overlay mirroring the web player's styling ──
+  // Default to the first track once subs arrive; honor an explicit user Off.
+  const activeSubIdx = subIdx < 0 && !userOff.current && subs.length ? 0 : subIdx;
+  const subUrl = activeSubIdx >= 0 ? subs[activeSubIdx]?.url || '' : '';
+
+  useEffect(() => {
+    if (!subUrl || cueCache.current.has(subUrl)) return;
+    let alive = true;
+    (async () => {
+      try {
+        // Backend subtitle entries can be relative (/api/netmirror/subs-get?fid=…)
+        // or absolute (OpenSubtitles); the proxy needs an absolute target.
+        const abs = /^https?:\/\//i.test(subUrl) ? subUrl : `${getApiBase()}${subUrl.startsWith('/') ? '' : '/'}${subUrl}`;
+        const r = await fetch(`${getApiBase()}/proxy/subtitle?url=${encodeURIComponent(abs)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const parsed = parseVtt(await r.text());
+        cueCache.current.set(subUrl, parsed);
+        if (alive) setFetchedCues({ url: subUrl, cues: parsed });
+      } catch { /* overlay stays empty; switching track retries */ }
+    })();
+    return () => { alive = false; };
+  }, [subUrl]);
+  const cues = subUrl
+    ? cueCache.current.get(subUrl) || (fetchedCues?.url === subUrl ? fetchedCues.cues : EMPTY_CUES)
+    : EMPTY_CUES;
+
+  // Our overlay replaces native rendering when the engine has tracks — stops
+  // ExoPlayer's auto-selected manifest track from double-rendering.
+  useEffect(() => {
+    if (subs.length && player.subtitleTrack) player.subtitleTrack = null;
+  }, [subs.length, status, player]);
+  useEventListener(player, 'availableSubtitleTracksChange', useCallback(() => {
+    if (subs.length && player.subtitleTrack) player.subtitleTrack = null;
+  }, [subs.length, player]));
+
+  // One global subtitle look, persisted across sessions.
+  useEffect(() => {
+    AsyncStorage.getItem('kakumei.subs.style')
+      .then((v) => {
+        if (!v) return;
+        try {
+          const s = JSON.parse(v);
+          if (s && typeof s === 'object') setSubStyle((prev) => ({ ...prev, ...s }));
+        } catch { /* corrupt prefs — keep defaults */ }
+      })
+      .catch(() => {});
+  }, []);
+  const patchSubStyle = (patch: Partial<SubStyle>) => {
+    setSubStyle((prev) => {
+      const next = { ...prev, ...patch };
+      AsyncStorage.setItem('kakumei.subs.style', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
 
   useEventListener(player, 'timeUpdate', useCallback((p: any) => {
     if (!scrubbing) setPos(p?.currentTime ?? 0);
@@ -686,6 +769,7 @@ function Player({
     lastTap.current = now;
   };
 
+  const subLine = cues.length ? cueTextAt(cues, (scrubbing ? scrubTime : pos) - subStyle.sync) : null;
   const progress = dur > 0 ? Math.min(1, (scrubbing ? scrubTime : pos) / dur) : 0;
   const bufferRatio = dur > 0 ? Math.min(1, buffered / dur) : 0;
   const buffering = status === 'loading' || status === 'idle';
@@ -710,6 +794,10 @@ function Player({
         <Pressable style={styles.tapZone} onPress={() => handleTap(10)} />
       </View>
 
+      {/* Premium scrims — controls fade into the video, not hard bars. */}
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.82)', 'rgba(0,0,0,0)']} style={[styles.topScrim, { height: Math.max(insetTop, 10) + 84 }]} />
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']} style={styles.bottomScrim} />
+
       {buffering && (
         <View style={styles.bufferOverlay} pointerEvents="none">
           <ActivityIndicator color={t.accent} size="large" />
@@ -722,6 +810,12 @@ function Player({
           <Text style={styles.seekHintText}>{seekHint > 0 ? '+10s' : '-10s'}</Text>
         </View>
       )}
+
+      {subLine ? (
+        <View style={[styles.subOverlay, { bottom: subStyle.position }]} pointerEvents="none">
+          <Text style={[styles.subText, { fontSize: subStyle.size, color: subStyle.color }]}>{subLine}</Text>
+        </View>
+      ) : null}
 
       {!!onNext && dur > 0 && dur - pos > 3 && dur - pos <= 45 && !nextCancelled && (
         <View style={styles.nextChip}>
@@ -804,6 +898,10 @@ function Player({
                 <Text style={styles.textBtnLabel}>{speed}x</Text>
               </Pressable>
               <View style={{ flex: 1 }} />
+              <Pressable onPress={onOpenParty} style={styles.iconBtn} hitSlop={8}>
+                <Ionicons name={inParty ? 'people' : 'people-outline'} size={20} color={inParty ? t.accent : '#fff'} />
+                {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
+              </Pressable>
               <Pressable onPress={openSettings} style={styles.iconBtn} hitSlop={8}>
                 <Ionicons name="settings-outline" size={20} color="#fff" />
               </Pressable>
@@ -818,21 +916,14 @@ function Player({
         </>
       )}
 
-      {/* Settings / tracks sheet */}
+      {/* Player settings — quality, speed, styled subtitles, watch party. */}
       <Modal visible={showSettings} transparent animationType="slide" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalWrap}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)} />
-        <View style={[styles.settingsSheet, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border }]}>
-          <Text style={[styles.sheetTitle, { color: t.text }]}>Playback</Text>
-          <ScrollView style={{ maxHeight: 360 }}>
-            <Text style={[styles.sheetSection, { color: t.muted }]}>SPEED</Text>
-            <View style={styles.optionWrap}>
-              {SPEEDS.map((r) => (
-                <Pressable key={r} onPress={() => setRate(r)} style={[styles.optionChip, speed === r && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-                  <Text style={[styles.optionText, { color: speed === r ? t.accent : t.secondary }]}>{r}x</Text>
-                </Pressable>
-              ))}
-            </View>
+        <View style={[styles.settingsSheet, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border, paddingBottom: insets.bottom + 22 }]}>
+          <View style={styles.sheetHandle} />
+          <Text style={[styles.sheetTitle, { color: t.text }]}>Player</Text>
+          <ScrollView style={{ maxHeight: 430 }} showsVerticalScrollIndicator={false}>
             {qualities.length > 1 && (
               <>
                 <Text style={[styles.sheetSection, { color: t.muted }]}>QUALITY</Text>
@@ -844,7 +935,64 @@ function Player({
                 ))}
               </>
             )}
-            {tracks.length > 0 && (
+            <Text style={[styles.sheetSection, { color: t.muted }]}>SPEED</Text>
+            <View style={styles.optionWrap}>
+              {SPEEDS.map((r) => (
+                <Pressable key={r} onPress={() => setRate(r)} style={[styles.optionChip, speed === r && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                  <Text style={[styles.optionText, { color: speed === r ? t.accent : t.secondary }]}>{r}x</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {subs.length > 0 ? (
+              <>
+                <Text style={[styles.sheetSection, { color: t.muted }]}>SUBTITLES</Text>
+                <View style={styles.optionWrap}>
+                  <Pressable onPress={() => { userOff.current = true; setSubIdx(-1); }} style={[styles.optionChip, activeSubIdx < 0 && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                    <Text style={[styles.optionText, { color: activeSubIdx < 0 ? t.accent : t.secondary }]}>Off</Text>
+                  </Pressable>
+                  {subs.map((s, i) => (
+                    <Pressable key={`${s.url}-${i}`} onPress={() => { userOff.current = false; setSubIdx(i); }} style={[styles.optionChip, activeSubIdx === i && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                      <Text style={[styles.optionText, { color: activeSubIdx === i ? t.accent : t.secondary }]}>{(s.label || `Track ${i + 1}`).slice(0, 18)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {activeSubIdx >= 0 && (
+                  <>
+                    <Text style={[styles.sheetSection, { color: t.muted }]}>TEXT COLOR</Text>
+                    <View style={styles.optionWrap}>
+                      {SUB_COLORS.map((c) => (
+                        <Pressable key={c.value} onPress={() => patchSubStyle({ color: c.value })} accessibilityLabel={c.label} style={[styles.colorDot, { backgroundColor: c.value }, subStyle.color === c.value && styles.colorDotActive]} />
+                      ))}
+                    </View>
+                    <Text style={[styles.sheetSection, { color: t.muted }]}>TEXT SIZE</Text>
+                    <View style={styles.optionWrap}>
+                      {SUB_SIZES.map((o) => (
+                        <Pressable key={o.label} onPress={() => patchSubStyle({ size: o.value })} style={[styles.optionChip, subStyle.size === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                          <Text style={[styles.optionText, { color: subStyle.size === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={[styles.sheetSection, { color: t.muted }]}>POSITION</Text>
+                    <View style={styles.optionWrap}>
+                      {SUB_POSITIONS.map((o) => (
+                        <Pressable key={o.label} onPress={() => patchSubStyle({ position: o.value })} style={[styles.optionChip, subStyle.position === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                          <Text style={[styles.optionText, { color: subStyle.position === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={[styles.sheetSection, { color: t.muted }]}>SYNC</Text>
+                    <View style={styles.optionWrap}>
+                      {SUB_SYNCS.map((o) => (
+                        <Pressable key={o.label} onPress={() => patchSubStyle({ sync: o.value })} style={[styles.optionChip, subStyle.sync === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
+                          <Text style={[styles.optionText, { color: subStyle.sync === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            ) : tracks.length > 0 ? (
               <>
                 <Text style={[styles.sheetSection, { color: t.muted }]}>SUBTITLES</Text>
                 <Pressable onPress={() => { player.subtitleTrack = null; setActiveTrack(null); }} style={styles.optionRow}>
@@ -859,11 +1007,18 @@ function Player({
                     {activeTrack === tr && <Ionicons name="checkmark" size={18} color={t.accent} />}
                   </Pressable>
                 ))}
+                <Text style={[styles.sheetNote, { color: t.muted }]}>Device-rendered track — our styled subtitle options appear when the stream ships its subtitle pack.</Text>
               </>
-            )}
-            {tracks.length === 0 && (
+            ) : (
               <Text style={[styles.sheetNote, { color: t.muted }]}>Subtitles appear here when the stream ships them.</Text>
             )}
+
+            <Text style={[styles.sheetSection, { color: t.muted }]}>WATCH PARTY</Text>
+            <Pressable onPress={() => { setShowSettings(false); onOpenParty(); }} style={styles.optionRow}>
+              <Ionicons name="people-outline" size={18} color={inParty ? t.accent : t.text} style={{ marginRight: 10 }} />
+              <Text style={[styles.optionText, { color: t.text, flex: 1 }]}>{inParty ? 'In a watch party — open controls' : 'Watch together with friends'}</Text>
+              <Ionicons name="chevron-forward" size={16} color={t.muted} />
+            </Pressable>
           </ScrollView>
         </View>
         </View>
@@ -874,7 +1029,7 @@ function Player({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
+  videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
   videoFill: { width: '100%', height: '100%', backgroundColor: '#000' },
   playerRoot: { flex: 1, position: 'relative' },
   tapLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row' },
@@ -883,7 +1038,7 @@ const styles = StyleSheet.create({
   seekHint: { position: 'absolute', alignSelf: 'center', top: '44%', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
   seekHintText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   hiccup: { position: 'absolute', bottom: 6, alignSelf: 'center', fontSize: 12, fontWeight: '700' },
-  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingBottom: 10, backgroundColor: 'rgba(0,0,0,0.45)' },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingBottom: 10 },
   topTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
   topSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
   iconBtn: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
@@ -896,10 +1051,10 @@ const styles = StyleSheet.create({
   nextChipBtn: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 6 },
   nextChipBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   centerRow: { position: 'absolute', top: '38%', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 26 },
-  playBtn: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  playBtn: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(168,85,247,0.92)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   sideBtn: { alignItems: 'center', justifyContent: 'center', width: 46, height: 46 },
   sideBtnText: { color: 'rgba(255,255,255,0.75)', fontSize: 9, fontWeight: '700', marginTop: 1 },
-  bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10 },
+  bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   timeText: { color: '#e5e7eb', fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] },
   track: { flex: 1, height: 22, justifyContent: 'center' },
@@ -909,6 +1064,13 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   textBtn: { paddingHorizontal: 8, paddingVertical: 8 },
   textBtnLabel: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  topScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
+  bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 108 },
+  subOverlay: { position: 'absolute', left: 14, right: 14, alignItems: 'center' },
+  subText: { textAlign: 'center', fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  sheetHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)', marginBottom: 10 },
+  colorDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)' },
+  colorDotActive: { borderColor: '#a855f7', borderWidth: 3 },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   settingsSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, padding: 18, paddingBottom: 26 },

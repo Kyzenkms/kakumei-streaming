@@ -1,0 +1,67 @@
+{
+  "name": "kakumei-desktop",
+  "productName": "Kakumei",
+  "version": "0.1.4",
+  "description": "Kakumei — anime-first streaming desktop app",
+  "author": "Kakumei",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:web": "cross-env VITE_TARGET=desktop node ../node_modules/vite/bin/vite.js --config ./vite.config.mjs --port 5174",
+    "dev:electron": "wait-on tcp:5174 && cross-env KAKUMEI_DEV_URL=http://localhost:5174 electron .",
+    "build:web": "node gen-gated-hosts.cjs && cross-env VITE_TARGET=desktop node ../node_modules/vite/bin/vite.js build --config ./vite.config.mjs",
+    "pack": "npm run build:web && electron-builder --dir",
+    "dist": "npm run build:web && electron-builder"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "rcedit": "^5.0.2",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.kakumei.desktop",
+    "productName": "Kakumei",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Kakumei-Setup-${version}.${ext}",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.entertainment"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    }
+  }
+}

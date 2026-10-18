@@ -1,0 +1,28 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/netmirror/:path*",
+      "destination": "https://stream.kyzenhub.site/api/netmirror/:path*"
+    },
+    {
+      "source": "/api/tmdb/:path*",
+      "destination": "https://stream.kyzenhub.site/api/tmdb/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://stream.kyzenhub.site/api/:path*"
+    },
+    {
+      "source": "/proxy/:path*",
+      "destination": "https://stream.kyzenhub.site/proxy/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

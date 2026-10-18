@@ -1,0 +1,246 @@
+/* ===========================================================================
+   Kyzen — Anime-first desktop design system
+   ---------------------------------------------------------------------------
+   All tokens + utilities are scoped under `.kyzen-desktop` (added to <html>
+   only inside the Electron shell), so the public website is unaffected.
+   A cinematic near-black canvas with an electric violet→magenta anime accent
+   and a cyan secondary. Built for depth, glow, and motion — not a flat dark
+   theme.
+   =========================================================================== */
+
+.kyzen-desktop {
+  /* ---- Color: canvas & surfaces ----
+     Grounded in ui-ux-pro-max "Dark Mode (OLED)" research: true-black canvas
+     with indigo depth, layered up for elevation. */
+  --kz-bg: #000000;
+  --kz-bg-elev-0: #07070e;
+  --kz-surface-1: #0f0f23;      /* indigo-tinted base surface */
+  --kz-surface-2: #15152e;
+  --kz-surface-3: #1e1b4b;      /* indigo depth for raised cards/sheets */
+  --kz-border: rgba(99, 91, 180, 0.18);
+  --kz-border-strong: rgba(124, 112, 220, 0.34);
+
+  /* ---- Color: text ---- */
+  --kz-text: #f8fafc;
+  --kz-text-secondary: rgba(248, 250, 252, 0.72);
+  --kz-text-muted: rgba(248, 250, 252, 0.46);
+
+  /* ---- Color: anime accent (signature) over the researched indigo base ---- */
+  --kz-accent: #a855f7;
+  --kz-accent-2: #ec4899;
+  --kz-accent-soft: rgba(168, 85, 247, 0.16);
+  --kz-secondary: #22d3ee;
+  --kz-play: #e11d48;           /* researched "play red" for primary CTAs */
+  --kz-gradient: linear-gradient(120deg, #a855f7 0%, #ec4899 100%);
+  --kz-gradient-aurora: radial-gradient(60% 80% at 20% 10%, rgba(168,85,247,0.22) 0%, transparent 60%),
+                        radial-gradient(50% 70% at 85% 20%, rgba(236,72,153,0.18) 0%, transparent 60%),
+                        radial-gradient(70% 90% at 60% 100%, rgba(34,211,238,0.12) 0%, transparent 65%);
+
+  /* ---- Semantic status ---- */
+  --kz-success: #34d399;
+  --kz-warning: #fbbf24;
+  --kz-danger: #f87171;
+
+  /* ---- Radius ---- */
+  --kz-r-xs: 4px;
+  --kz-r-sm: 8px;
+  --kz-r-md: 12px;
+  --kz-r-lg: 18px;
+  --kz-r-xl: 26px;
+  --kz-r-full: 9999px;
+
+  /* ---- Spacing scale ---- */
+  --kz-sp-1: 4px;
+  --kz-sp-2: 8px;
+  --kz-sp-3: 12px;
+  --kz-sp-4: 16px;
+  --kz-sp-5: 24px;
+  --kz-sp-6: 32px;
+  --kz-sp-7: 48px;
+  --kz-sp-8: 64px;
+
+  /* ---- Shadows / glow ---- */
+  --kz-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --kz-shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --kz-shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --kz-glow: 0 0 0 1px rgba(168, 85, 247, 0.4), 0 0 22px rgba(168, 85, 247, 0.35);
+  --kz-glow-2: 0 0 24px rgba(236, 72, 153, 0.4);
+
+  /* ---- Z-index ---- */
+  --kz-z-base: 1;
+  --kz-z-rail: 20;
+  --kz-z-nav: 40;
+  --kz-z-overlay: 60;
+  --kz-z-modal: 80;
+  --kz-z-toast: 100;
+  --kz-z-titlebar: 9999;
+
+  /* ---- Motion ---- */
+  --kz-dur-fast: 120ms;
+  --kz-dur: 220ms;
+  --kz-dur-slow: 420ms;
+  --kz-ease: cubic-bezier(0.22, 1, 0.36, 1);        /* easeOutExpo-ish */
+  --kz-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --kz-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* App canvas */
+  color-scheme: dark;
+  background: var(--kz-bg);
+  color: var(--kz-text);
+}
+
+/* ---- Surfaces ---- */
+.kyzen-desktop .kz-surface {
+  background: var(--kz-surface-1);
+  border: 1px solid var(--kz-border);
+  border-radius: var(--kz-r-md);
+}
+.kyzen-desktop .kz-card {
+  background: linear-gradient(180deg, var(--kz-surface-2) 0%, var(--kz-surface-1) 100%);
+  border: 1px solid var(--kz-border);
+  border-radius: var(--kz-r-lg);
+  box-shadow: var(--kz-shadow-md);
+  transition: transform var(--kz-dur) var(--kz-ease), box-shadow var(--kz-dur) var(--kz-ease), border-color var(--kz-dur) var(--kz-ease);
+}
+.kyzen-desktop .kz-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--kz-border-strong);
+  box-shadow: var(--kz-shadow-lg), var(--kz-glow);
+}
+.kyzen-desktop .kz-glass {
+  background: rgba(13, 13, 20, 0.6);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--kz-border);
+}
+
+/* ---- Accent helpers ---- */
+.kyzen-desktop .kz-accent-gradient {
+  background: var(--kz-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.kyzen-desktop .kz-glow { box-shadow: var(--kz-glow); }
+.kyzen-desktop .kz-glow-2 { box-shadow: var(--kz-glow-2); }
+
+/* ---- Accessible focus ---- */
+.kyzen-desktop .kz-focus-ring:focus-visible {
+  outline: 2px solid var(--kz-accent);
+  outline-offset: 2px;
+  border-radius: var(--kz-r-sm);
+}
+
+/* ---- Aurora animated backdrop ---- */
+.kyzen-desktop .kz-aurora {
+  position: relative;
+  isolation: isolate;
+}
+.kyzen-desktop .kz-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  background: var(--kz-gradient-aurora);
+  filter: blur(40px);
+  opacity: 0.9;
+  animation: kz-aurora-drift 18s var(--kz-ease-in-out) infinite alternate;
+}
+@keyframes kz-aurora-drift {
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1); }
+  50%  { transform: translate3d(2%, 2%, 0) scale(1.08); }
+  100% { transform: translate3d(1%, -2%, 0) scale(1.03); }
+}
+
+/* ---- Skeleton shimmer ---- */
+.kyzen-desktop .kz-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--kz-surface-2);
+  border-radius: var(--kz-r-sm);
+}
+.kyzen-desktop .kz-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: kz-shimmer 1.4s infinite;
+}
+@keyframes kz-shimmer { 100% { transform: translateX(100%); } }
+
+/* ---- Active selection chip (season/episode/bookmark toggles) ----
+   Follows the current accent — no hardcoded purple anywhere. */
+.kyzen-desktop .nm-active-chip {
+  border-color: color-mix(in srgb, var(--kz-accent) 45%, transparent) !important;
+  background: var(--kz-accent-soft) !important;
+  color: var(--kz-accent) !important;
+}
+.kyzen-desktop .nm-active-chip .kz-play-accent { color: var(--kz-accent); }
+
+.kyzen-desktop .nm-badge-count {
+  background: var(--kz-accent);
+  color: var(--kz-on-accent, #fff);
+}
+
+/* ---- Watch Party panel: desktop geometry -------------------------------
+   Responsive (sm:) variants in shared src/components do NOT generate in the
+   desktop build (root-scanned), so the panel gets explicit desktop geometry
+   here instead of relying on sm:right-4 etc. The website build is unaffected
+   (.kyzen-desktop scope never applies there). */
+.kyzen-desktop .wp-backdrop { display: none !important; }
+/* Overlay geometry applies to floating panels only — docked panels live in
+   the flex row beside the player. */
+.kyzen-desktop .wp-panel:not(.wp-docked) {
+  left: auto !important;
+  right: 1rem !important;
+  /* Clear of the 3rem titlebar + caption buttons — no more blending into
+     the headbar or crowding _ ▢ ✕. */
+  top: 4rem !important;
+  bottom: 1rem !important;
+  height: auto !important;
+  width: min(var(--wp-w, 400px), calc(100vw - 2rem)) !important;
+  border-radius: 1rem !important;
+  border-color: var(--kz-border-strong, rgba(255,255,255,0.14)) !important;
+  background: var(--kz-bg-elev-0, #0a0a10) !important;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,0,0,0.4) !important;
+}
+.kyzen-desktop .wp-resize { display: block !important; }
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .kyzen-desktop .kz-aurora::before,
+  .kyzen-desktop .kz-skeleton::after { animation: none; }
+  .kyzen-desktop .kz-card { transition: none; }
+  .kyzen-desktop .kz-card:hover { transform: none; }
+}
+
+/* ---- Themed select — one control style for every dropdown (filters, episodes) ----
+   Native selects render as raw OS widgets on dark themes; this gives them the
+   same surface/border/accent language as the rest of the app. */
+.kz-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 1px solid var(--kz-border, rgba(255, 255, 255, 0.12));
+  background-color: var(--kz-surface-2, #15152e);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6l4 4 4-4' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55rem center;
+  background-size: 0.8rem;
+  padding: 0.45rem 1.9rem 0.45rem 0.7rem;
+  color: var(--kz-text, #f8fafc);
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.kz-select:hover { border-color: var(--kz-border-strong, rgba(255, 255, 255, 0.22)); }
+.kz-select:focus-visible,
+.kz-select:focus {
+  border-color: var(--kz-accent, #a855f7);
+  box-shadow: 0 0 0 3px var(--kz-accent-soft, rgba(168, 85, 247, 0.16));
+}
+.kz-select option { background: #101020; color: #f4f4f5; }

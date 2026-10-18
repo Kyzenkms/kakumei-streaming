@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kakumei — Movies, series & anime in one app</title>
+<meta name="description" content="Kakumei is a free streaming app for movies, series and anime. Watch in English, Hindi and more, pick from 18 themes, and host watch parties. On Windows, Android and the web." />
+<style>
+  :root {
+    --bg:#0F0F23; --bg-deep:#07070e; --s1:#15152e; --s2:#1e1b4b;
+    --bd:#312E81; --bd-soft:rgba(99,91,180,.22);
+    --tx:#F8FAFC; --mut:rgba(248,250,252,.66); --faint:rgba(248,250,252,.44);
+    --ac:#a855f7; --ac2:#ec4899; --play:#e11d48;
+    --r:18px; --max:1120px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; }
+  body { background:var(--bg); color:var(--tx); font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .skip { position:absolute; left:-999px; top:0; background:var(--ac); color:#fff; padding:10px 18px; border-radius:0 0 12px 0; z-index:100; }
+  .skip:focus { left:0; }
+  a:focus-visible, button:focus-visible { outline:2px solid var(--ac); outline-offset:3px; border-radius:8px; }
+  .wrap { max-width:var(--max); margin:0 auto; padding:0 24px; }
+  /* ── Nav ── */
+  .nav { position:sticky; top:0; z-index:50; background:rgba(7,7,14,.82); backdrop-filter:blur(16px); border-bottom:1px solid var(--bd-soft); }
+  .nav-in { max-width:var(--max); margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:14px; }
+  .logo { font-weight:800; letter-spacing:.22em; font-size:15px; color:var(--tx); text-decoration:none; }
+  .logo b { color:var(--ac); }
+  .nav-links { margin-left:auto; display:flex; gap:4px; align-items:center; }
+  .nav-links a { color:var(--mut); text-decoration:none; font-size:14px; padding:9px 14px; border-radius:10px; min-height:44px; display:inline-flex; align-items:center; }
+  .nav-links a:hover { color:#fff; background:rgba(255,255,255,.06); }
+  .nav-cta { background:linear-gradient(135deg,var(--play),var(--ac)); color:#fff !important; font-weight:700; }
+  @media (max-width:640px){ .nav-links a.hide-s { display:none; } }
+  /* ── Hero ── */
+  .hero { position:relative; overflow:hidden; padding:88px 0 64px; text-align:center; }
+  .hero::before { content:''; position:absolute; inset:0; background:radial-gradient(55% 55% at 50% 0%, rgba(168,85,247,.24), transparent 66%), radial-gradient(38% 42% at 82% 24%, rgba(236,72,153,.14), transparent 62%), radial-gradient(40% 46% at 16% 30%, rgba(34,211,238,.10), transparent 60%); pointer-events:none; }
+  .hero > * { position:relative; }
+  .kicker { display:inline-flex; align-items:center; gap:8px; font-size:12px; letter-spacing:.26em; text-transform:uppercase; color:var(--mut); border:1px solid var(--bd-soft); border-radius:999px; padding:8px 18px; background:rgba(255,255,255,.02); }
+  .kicker .pulse { display:none; }
+  h1 { font-size:clamp(36px,6vw,62px); font-weight:800; letter-spacing:-.02em; line-height:1.08; margin:22px auto 0; max-width:760px; }
+  h1 .grad { background:linear-gradient(115deg,var(--ac),var(--ac2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .lede { color:var(--mut); font-size:17px; max-width:600px; margin:18px auto 0; }
+  .cta-row { display:flex; gap:12px; justify-content:center; margin-top:34px; flex-wrap:wrap; }
+  .btn { display:inline-flex; align-items:center; gap:10px; min-height:52px; padding:0 30px; border-radius:14px; font-size:15px; font-weight:700; text-decoration:none; transition:transform .2s ease, filter .2s ease; cursor:pointer; }
+  .btn:hover { transform:translateY(-2px); filter:brightness(1.1); }
+  .btn:active { transform:scale(.98); }
+  .btn-p { background:linear-gradient(135deg,var(--play),var(--ac)); color:#fff; box-shadow:0 10px 32px -10px var(--ac); }
+  .btn-g { border:1px solid var(--bd); color:var(--tx); background:rgba(255,255,255,.03); }
+  .btn svg { width:18px; height:18px; flex:none; }
+  .stats { display:flex; gap:36px; justify-content:center; margin-top:44px; flex-wrap:wrap; }
+  .stat { text-align:center; }
+  .stat b { display:block; font-size:26px; font-weight:800; }
+  .stat span { font-size:13px; color:var(--mut); }
+  /* ── App mock ── */
+  .mock { max-width:880px; margin:56px auto 0; border:1px solid var(--bd-soft); border-radius:20px; overflow:hidden; background:var(--bg-deep); box-shadow:0 30px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(0,0,0,.4); }
+  .mock-bar { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--bd-soft); }
+  .mock-bar i { width:10px; height:10px; border-radius:50%; background:var(--s2); display:block; }
+  .mock-bar i:first-child { background:var(--ac); }
+  .mock-body { display:grid; grid-template-columns:200px 1fr; gap:0; text-align:left; }
+  .mock-side { border-right:1px solid var(--bd-soft); padding:18px 14px; display:flex; flex-direction:column; gap:6px; }
+  .mock-side span { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--mut); padding:9px 12px; border-radius:10px; }
+  .mock-side span.on { background:var(--s2); color:#fff; }
+  .mock-side svg { width:16px; height:16px; }
+  .mock-main { padding:22px; }
+  .mock-hero { border-radius:14px; background:linear-gradient(135deg,#2b1660,#7c2d52 60%,#0e3a58); padding:26px; min-height:170px; display:flex; flex-direction:column; justify-content:flex-end; }
+  .mock-hero small { font-size:11px; letter-spacing:.2em; color:rgba(255,255,255,.7); }
+  .mock-hero b { font-size:24px; }
+  .mock-play { margin-top:12px; display:inline-flex; align-items:center; gap:8px; background:#fff; color:#111; font-size:13px; font-weight:700; border-radius:10px; padding:9px 20px; width:fit-content; }
+  .mock-row { display:flex; gap:10px; margin-top:16px; }
+  .mock-card { flex:1; border-radius:10px; min-height:86px; }
+  @media (max-width:640px){ .mock-body { grid-template-columns:1fr; } .mock-side { display:none; } }
+  /* ── Sections ── */
+  section.block { padding:72px 0 8px; }
+  .sec-head { text-align:center; max-width:620px; margin:0 auto 40px; }
+  .sec-head h2 { font-size:clamp(26px,4vw,36px); font-weight:800; letter-spacing:-.01em; }
+  .sec-head p { color:var(--mut); margin-top:10px; }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+  .card { background:linear-gradient(180deg,var(--s1),var(--bg-deep)); border:1px solid var(--bd-soft); border-radius:var(--r); padding:28px; display:flex; flex-direction:column; transition:transform .2s ease, border-color .2s ease; }
+  .card:hover { transform:translateY(-4px); border-color:var(--bd); }
+  .card .ic { width:46px; height:46px; border-radius:13px; display:grid; place-items:center; background:rgba(168,85,247,.14); }
+  .card .ic svg { width:22px; height:22px; stroke:var(--ac); }
+  .card h3 { margin:16px 0 8px; font-size:19px; }
+  .card p { color:var(--mut); font-size:14px; flex:1; }
+  .card .meta { font-size:12.5px; color:var(--faint); margin-top:12px; }
+  .card a.dl { margin-top:18px; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 22px; border-radius:12px; background:var(--ac); color:#fff; font-size:14px; font-weight:700; text-decoration:none; transition:filter .2s ease, transform .2s ease; }
+  .card a.dl:hover { filter:brightness(1.12); transform:scale(1.02); }
+  .card a.dl svg { width:16px; height:16px; }
+  .card a.ghost { background:transparent; border:1px solid var(--bd); }
+  .card .cmd { display:flex; gap:8px; margin-top:18px; }
+  .card .cmd code { flex:1; min-width:0; background:var(--bg-deep); border:1px solid var(--bd-soft); border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.55; word-break:break-all; color:var(--mut); user-select:all; }
+  .card .cmd button { flex:0 0 auto; padding:0 14px; border-radius:10px; border:1px solid var(--bd); background:transparent; color:var(--tx); font-size:12.5px; font-weight:600; cursor:pointer; }
+  .card .cmd button:hover { border-color:var(--ac); color:var(--ac); }
+  .oss { text-align:center; color:var(--faint); font-size:13px; margin-top:26px; }
+  .oss a { color:var(--mut); text-decoration:none; }
+  .oss a:hover { color:#fff; }
+  details p a { color:var(--ac); text-decoration:none; }
+  details p a:hover { text-decoration:underline; }
+  /* Steps */
+  .steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; counter-reset:step; }
+  .step { border:1px solid var(--bd-soft); border-radius:var(--r); padding:26px; background:rgba(255,255,255,.015); }
+  .step b.num { display:grid; place-items:center; width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--ac),var(--ac2)); font-size:15px; margin-bottom:14px; }
+  .step h3 { font-size:16px; margin-bottom:6px; }
+  .step p { color:var(--mut); font-size:14px; }
+  /* Features */
+  .feats { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .feat { border:1px solid var(--bd-soft); border-radius:14px; padding:20px; background:rgba(255,255,255,.015); }
+  .feat svg { width:20px; height:20px; stroke:var(--ac); margin-bottom:10px; }
+  .feat h4 { font-size:15px; margin-bottom:6px; }
+  .feat p { color:var(--mut); font-size:13.5px; }
+  /* FAQ */
+  .faq { max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  details { border:1px solid var(--bd-soft); border-radius:14px; background:rgba(255,255,255,.015); overflow:hidden; }
+  summary { padding:18px 20px; font-weight:600; font-size:15px; cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:56px; }
+  summary::-webkit-details-marker { display:none; }
+  summary:hover { background:rgba(255,255,255,.03); }
+  summary svg { width:16px; height:16px; flex:none; stroke:var(--mut); transition:transform .2s ease; }
+  details[open] summary svg { transform:rotate(180deg); }
+  details p { padding:0 20px 18px; color:var(--mut); font-size:14px; }
+  /* Final CTA + footer */
+  .final { text-align:center; padding:80px 0; }
+  footer { border-top:1px solid var(--bd-soft); padding:28px 0 44px; color:var(--faint); font-size:13px; }
+  footer .wrap { display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+  footer a { color:var(--mut); text-decoration:none; } footer a:hover { color:#fff; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior:auto; }
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+  .btn.soon, .dl.soon, a.soon { pointer-events:none; opacity:.7; }
+</style>
+</head>
+<body>
+<a class="skip" href="#download">Skip to downloads</a>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="logo" href="#">KAKUMEI<b>.</b></a>
+    <nav class="nav-links" aria-label="Page">
+      <a class="hide-s" href="#how">How it works</a>
+      <a class="hide-s" href="#features">Features</a>
+      <a class="hide-s" href="#faq">FAQ</a>
+      <a class="nav-cta" href="#download">Get the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <span class="kicker">Free · No account needed</span>
+    <h1>Movies, series &amp; anime — <span class="grad">all in one app.</span></h1>
+    <p class="lede">Kakumei finds the best available stream for whatever you want to watch — in English, Hindi and more — on your PC, your phone, or right here in the browser.</p>
+    <div class="cta-row">
+      <a class="btn btn-p" href="#download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Get Kakumei free
+      </a>
+      <a class="btn btn-g js-soon" href="/app/">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        Watch in browser
+      </a>
+    </div>
+    <div class="stats" aria-label="Highlights">
+      <div class="stat"><b>18</b><span>colour themes</span></div>
+      <div class="stat"><b>8+</b><span>dub languages</span></div>
+      <div class="stat"><b>3</b><span>ways to watch</span></div>
+    </div>
+
+    <div class="mock" aria-hidden="true">
+      <div class="mock-bar"><i></i><i></i><i></i></div>
+      <div class="mock-body">
+        <div class="mock-side">
+          <span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Home</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/></svg>Anime</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Saved</span>
+        </div>
+        <div class="mock-main">
+          <div class="mock-hero">
+            <small>FEATURED FILM</small>
+            <b>Tonight's pick</b>
+            <span class="mock-play">▶&nbsp; Play</span>
+          </div>
+          <div class="mock-row">
+            <div class="mock-card" style="background:linear-gradient(135deg,#7c2d52,#2b1660)"></div>
+            <div class="mock-card" style="background:linear-gradient(135deg,#0e3a58,#155e75)"></div>
+            <div class="mock-card" style="background:linear-gradient(135deg,#3a1e17,#7c2d12)"></div>
+            <div class="mock-card" style="background:linear-gradient(135deg,#19362d,#14532d)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="download">
+    <div class="sec-head">
+      <h2>Pick your screen</h2>
+      <p>Same catalogue everywhere. Your saved list follows you when you sign in.</p>
+    </div>
+    <div class="grid3">
+      <article class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+        <h3>Windows app</h3>
+        <p>The full experience: fastest streams, offline-friendly window controls, keyboard shortcuts and a command palette. For Windows 10 or 11, 64-bit.</p>
+        <p class="meta">Version 0.1.5 · Free download</p>
+        <a class="dl" href="/downloads/Kakumei-Setup-0.1.5.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download for Windows
+        </a>
+      </article>
+      <article class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+        <h3>Windows via command</h3>
+        <p>PC only. If Windows shows the SmartScreen warning when you run the installer, install this way instead: press Win + R, type cmd, paste the command and hit Enter. Downloads made from the command line don't carry the browser's warning flag, so the installer just opens.</p>
+        <p class="meta">Windows 10/11 · Skips the SmartScreen prompt</p>
+        <div class="cmd"><code>curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.5.exe &amp;&amp; %TEMP%\Kakumei.exe</code><button type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent.trim()); this.textContent='Copied'">Copy</button></div>
+      </article>
+      <article class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
+        <h3>Android app</h3>
+        <p>Made for the couch and the commute: big touch targets, episode picker, dub selection and your watchlist in your pocket. Needs Android 8 or newer.</p>
+        <p class="meta">Version 1.0.0 · Free download</p>
+        <a class="dl" href="/downloads/kakumei-1.0.0.apk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download for Android
+        </a>
+      </article>
+      <article class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+        <h3>Web app</h3>
+        <p>Nothing to install — the whole catalogue in your browser, including watch parties with friends and a built-in stream doctor.</p>
+        <p class="meta">Works on any modern browser</p>
+        <a class="dl ghost js-soon" href="/app/">Open the web app</a>
+      </article>
+    </div>
+    <p class="oss">Kakumei is open source — read the code on GitHub: <a href="https://github.com/Kyzenkms/kyzen-stream" target="_blank" rel="noopener">web &amp; desktop</a> · <a href="https://github.com/Kyzenkms/kyzen-mobile" target="_blank" rel="noopener">Android</a></p>
+  </section>
+
+  <section class="block" id="how">
+    <div class="sec-head">
+      <h2>Watching takes seconds</h2>
+      <p>No manuals, no settings maze. Three steps and you're in.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><b class="num">1</b><h3>Find something</h3><p>Search by title, browse trending rows, or let the Anime tab surprise you.</p></div>
+      <div class="step"><b class="num">2</b><h3>Press play</h3><p>Kakumei picks the best working stream and your preferred language automatically.</p></div>
+      <div class="step"><b class="num">3</b><h3>Bring friends</h3><p>Start a watch party, share the code, and react together in real time.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="features">
+    <div class="sec-head">
+      <h2>Small app, serious comforts</h2>
+      <p>Everything you'd expect from a big streaming service — without the subscription.</p>
+    </div>
+    <div class="feats">
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><h4>Streams that just play</h4><p>If one source stumbles, the next takes over automatically — movies and weeklies alike.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg><h4>Your language first</h4><p>Set English or Hindi once and every title opens dubbed your way when it's available.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.26-.29-.43-.68-.43-1.12A1.68 1.68 0 0 1 14.46 16h2.08A2.46 2.46 0 0 0 19 13.54C19 7.96 15.96 2 12 2z"/></svg><h4>18 colour themes</h4><p>Midnight, Synthwave, Dracula and more — the whole app, player included, follows your pick.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><h4>Watch parties</h4><p>Synced playback, live chat and emoji reactions with anyone holding a party code.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><h4>Continue anywhere</h4><p>Pause on your phone, keep watching on your PC — your dub choice and recent list carry over.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><h4>Private by default</h4><p>Watchlist and history live on your device. Sign in only if you want cloud sync.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="faq">
+    <div class="sec-head">
+      <h2>Questions, answered</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Is Kakumei really free?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+        <p>Yes — every platform, no account needed. Signing in only unlocks cloud sync of your watchlist across devices.</p>
+      </details>
+      <details>
+        <summary>Can I watch in Hindi or other languages?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+        <p>When a title has dubs, you'll see them as pills on its page. Set your preferred language once in Settings and matching titles open dubbed automatically.</p>
+      </details>
+      <details>
+        <summary>What if a video won't play?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+        <p>Hit Retry, or switch servers from the list under the player. The app's Diagnostics screen (Settings → About) shows backend and CDN status if something bigger is down.</p>
+      </details>
+      <details>
+        <summary>Is it safe to install the apps?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+        <p>Yes — the entire source is public: <a href="https://github.com/Kyzenkms/kyzen-stream" target="_blank" rel="noopener">web &amp; desktop</a> and <a href="https://github.com/Kyzenkms/kyzen-mobile" target="_blank" rel="noopener">Android</a>. The Windows installer may trigger a SmartScreen notice because it isn't commercially signed — click “More info → Run anyway” if you trust the source.</p>
+      </details>
+      <details>
+        <summary>Do I need an account for watch parties?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+        <p>No. Pick a nickname, start a party, share the 6-letter code. Guests join from any device with the link — playback stays in sync automatically.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="final">
+    <h2 style="font-size:clamp(24px,4vw,34px); font-weight:800;">Your next favourite is one tap away.</h2>
+    <div class="cta-row"><a class="btn btn-p" href="#download">Get Kakumei free</a></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Kakumei — a metadata aggregator. Streams come from third-party sources.</span>
+    <span style="margin-left:auto; display:flex; gap:18px;"><a href="https://github.com/Kyzenkms/kyzen-stream" target="_blank" rel="noopener">Open source</a><a href="https://discord.com/users/1035500738572451891" target="_blank" rel="noopener">Discord</a><a href="https://www.instagram.com/kyzenn.h1/" target="_blank" rel="noopener">Instagram</a><a href="/app/legal">Legal</a><a class="js-soon" href="/app/">Web app</a></span>
+  </div>
+</footer>
+<script>
+document.querySelectorAll('.js-soon').forEach(function (b) {
+  b.addEventListener('click', function (e) { e.preventDefault(); b.classList.add('soon'); b.textContent = 'Coming soon'; });
+});
+</script>
+</body>
+</html>

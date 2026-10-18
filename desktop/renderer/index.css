@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+/* Shared src/components are imported by @app alias but live outside the vite
+   root, so Tailwind's automatic source detection never sees their classes. */
+@source "../../src/components";
+/* The grounded anime-OTT design system (OLED + indigo base, violet→magenta
+   accent). Scoped under .kyzen-desktop, which <html> always has here. */
+@import "../../src/styles/anime-theme.css";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--kz-bg);
+  color: var(--kz-text);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* app shell owns its own scroll regions */
+}
+.kz-display { font-family: "Space Grotesk", Inter, sans-serif; letter-spacing: -0.02em; }
+
+/* Custom slim scrollbars for the desktop shell */
+.kyzen-desktop ::-webkit-scrollbar { width: 10px; height: 10px; }
+.kyzen-desktop ::-webkit-scrollbar-track { background: transparent; }
+.kyzen-desktop ::-webkit-scrollbar-thumb {
+  background: var(--kz-surface-3);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.kyzen-desktop ::-webkit-scrollbar-thumb:hover { background: var(--kz-accent); background-clip: padding-box; }

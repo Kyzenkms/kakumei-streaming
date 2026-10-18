@@ -1,0 +1,63 @@
+# Imported by /etc/caddy/Caddyfile. Caddy manages the public TLS certificate.
+(kakumei) {
+	root * /var/www/kakumei
+	encode zstd gzip
+
+	@backend path /api/* /proxy/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:3005
+	}
+
+	redir /app /app/ 308
+	handle /app/assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	handle /app/* {
+		try_files {path} /app/index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	handle /downloads/* {
+		header Content-Disposition attachment
+		# Artifacts are versioned filenames (immutable) — safe for edge cache.
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	# Root-level static files from the web build (crawlers + browsers request
+	# these at /, not under /app/). Served from the deployed app dir.
+	@rootfiles path /robots.txt /favicon.ico /favicon.svg /icons.svg /sw.js
+	handle @rootfiles {
+		root * /var/www/kakumei/app
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+	# Watch-party signaling (PeerJS broker on :9000). Websocket upgrade
+	# passes through Caddy's reverse proxy untouched.
+	@party path /myapp/*
+	handle @party {
+		reverse_proxy 127.0.0.1:9000
+	}
+	handle / {
+		rewrite * /index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
+
+# Kept for existing origin health checks and local metadata fallback.
+http://stream.kyzenhub.site {
+	import kakumei
+}
+
+https://stream.kyzenhub.site {
+	# Same VCN interface solisk uses: public 137.23.45.53 NATs here.
+	# Tailscale owns its own :443 listeners, so bind explicitly. Auto-TLS
+	# (HTTP challenge through Cloudflare) + no global redirect changes.
+	bind 10.0.0.207
+	import kakumei
+}

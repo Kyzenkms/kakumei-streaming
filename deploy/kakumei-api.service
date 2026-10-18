@@ -1,0 +1,20 @@
+[Unit]
+Description=Kakumei NetMirror API
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/kakumei/backend
+Environment=NODE_ENV=production
+Environment=PORT=3005
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/kakumei/ms-playwright
+# EnvironmentFile=/opt/kakumei/backend/.env
+ExecStart=/usr/bin/node server.cjs
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/kakumei-api.log
+StandardError=append:/var/log/kakumei-api.log
+
+[Install]
+WantedBy=multi-user.target

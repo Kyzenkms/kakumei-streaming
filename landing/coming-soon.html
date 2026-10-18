@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Kakumei — Web app coming soon</title>
+  <style>
+    :root {
+      --bg:#0F0F23; --bg-deep:#07070e; --s1:#15152e;
+      --bd:#312E81; --bd-soft:rgba(99,91,180,.22);
+      --tx:#F8FAFC; --mut:rgba(248,250,252,.66); --faint:rgba(248,250,252,.44);
+      --ac:#a855f7; --ac2:#ec4899;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--tx);
+      font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif; padding:24px;
+      background-image:radial-gradient(circle at 20% 0%, rgba(168,85,247,.14), transparent 45%),
+                       radial-gradient(circle at 80% 100%, rgba(236,72,153,.1), transparent 45%); }
+    .card { width:100%; max-width:560px; text-align:center; background:linear-gradient(180deg,var(--s1),var(--bg-deep));
+      border:1px solid var(--bd-soft); border-radius:18px; padding:56px 36px; }
+    .logo { font-size:15px; font-weight:800; letter-spacing:.22em; text-transform:uppercase; color:var(--faint); }
+    .logo b { color:var(--ac); }
+    .kicker { display:inline-flex; margin:26px 0 18px; font-size:12px; letter-spacing:.26em; text-transform:uppercase;
+      color:var(--mut); border:1px solid var(--bd-soft); border-radius:999px; padding:8px 18px; background:rgba(255,255,255,.02); }
+    h1 { font-size:clamp(26px,5vw,36px); font-weight:800; letter-spacing:-.01em; line-height:1.15; }
+    h1 .grad { background:linear-gradient(115deg,var(--ac),var(--ac2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    p { color:var(--mut); font-size:15px; line-height:1.6; margin-top:14px; }
+    .row { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:30px; }
+    a.btn { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:12px;
+      font-size:14px; font-weight:700; text-decoration:none; transition:filter .2s ease, transform .2s ease; }
+    a.primary { background:var(--ac); color:#fff; }
+    a.primary:hover { filter:brightness(1.12); transform:scale(1.02); }
+    a.ghost { border:1px solid var(--bd); color:var(--tx); }
+    a.ghost:hover { border-color:var(--ac); color:var(--ac); }
+    .meta { margin-top:26px; font-size:13px; color:var(--faint); }
+    .meta a { color:var(--mut); text-decoration:none; }
+    .meta a:hover { color:#fff; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">KAKU<b>MEI</b></div>
+    <div class="kicker">Coming soon</div>
+    <h1>The web app is <span class="grad">on its way.</span></h1>
+    <p>We're putting the final touches on the browser version. The Windows and Android apps are live right now — grab one below.</p>
+    <div class="row">
+      <a class="btn primary" href="/#download">Get the apps</a>
+      <a class="btn ghost" href="/">Back to home</a>
+    </div>
+    <p class="meta">Movies, series and anime — free, on every screen. <a href="/">stream.kyzenhub.site</a></p>
+  </main>
+</body>
+</html>

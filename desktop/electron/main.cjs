@@ -10,7 +10,7 @@
 // with ZERO proxy and ZERO bandwidth on our side (CDN → device directly).
 'use strict';
 
-const { app, BrowserWindow, session, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell, Menu, dialog } = require('electron');
 const path = require('path');
 
 // NetMirror's CDN serves many titles as HEVC/H.265 MP4 (hvcC). Chromium ships
@@ -116,6 +116,38 @@ function installRefererRewrite(ses) {
   });
 }
 
+// ── Auto-update ────────────────────────────────────────────────────────────
+// Feed: GitHub releases on the public repo (build.publish in package.json →
+// app-update.yml inside the packaged app). Downloads in the background;
+// installs on quit, or immediately via the prompt once downloaded.
+function setupAutoUpdate() {
+  if (isDev || !app.isPackaged) return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('error', (e) => console.log('[updater] error:', (e && e.message) || e));
+    autoUpdater.on('update-downloaded', (info) => {
+      dialog
+        .showMessageBox({
+          type: 'info',
+          title: 'Kakumei update ready',
+          message: `Kakumei ${info.version} has been downloaded.`,
+          detail: 'Restart now to finish updating. If you choose Later, it installs next time you close the app.',
+          buttons: ['Restart now', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+        })
+        .then((r) => {
+          if (r.response === 0) autoUpdater.quitAndInstall();
+        });
+    });
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  } catch (e) {
+    console.log('[updater] disabled:', (e && e.message) || e);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -200,6 +232,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(loadLiveCdnConfig, 30 * 60 * 1000);
     Menu.setApplicationMenu(null); // custom in-app menus; no native menubar
     createWindow();
+    setupAutoUpdate();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

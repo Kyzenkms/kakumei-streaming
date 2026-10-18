@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { PrefsProvider, usePrefs } from '../prefs';
 import { setApiBase } from '../api';
+import { UpdateGate } from '../updates';
 
 function ApplyPrefs() {
   const { t, apiBase } = usePrefs();
@@ -23,6 +24,7 @@ export default function RootLayout() {
   return (
     <PrefsProvider>
       <ApplyPrefs />
+      <UpdateGate />
     </PrefsProvider>
   );
 }

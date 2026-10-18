@@ -26,6 +26,12 @@ curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup
 
 Files fetched this way don't carry the browser's Mark of the Web, so the installer opens without the warning.
 
+## Updates
+
+- **Windows** — checks GitHub releases on launch and auto-installs new versions (a restart prompt appears once downloaded).
+- **Android** — checks `/version.json` on launch: minor updates show a dismissible banner, builds below the minimum supported version are locked until updated.
+- **Web** — updates itself on every deploy.
+
 ## What's inside this repo
 
 - `src/` — web app (React + Vite): catalog, player, watch party, profiles

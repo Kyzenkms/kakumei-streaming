@@ -33,6 +33,12 @@
 		header Cache-Control "public, max-age=3600"
 		file_server
 	}
+	# Update manifest for the apps' in-app update checks (soft banner vs
+	# forced lockout). Lives outside /app so app redeploys don't wipe it.
+	handle /version.json {
+		header Cache-Control "no-cache"
+		file_server
+	}
 	# Watch-party signaling (PeerJS broker on :9000). Websocket upgrade
 	# passes through Caddy's reverse proxy untouched.
 	@party path /myapp/*

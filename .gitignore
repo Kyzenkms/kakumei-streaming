@@ -38,6 +38,7 @@ ios/
 
 # superseded installers — kept local on dev, never added to public snapshots
 /downloads/kakumei-1.0.4.apk
+/downloads/Kakumei-Setup-0.1.5.exe
 
 # dev debris — kept local, never in the public repo
 /.agents/

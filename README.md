@@ -10,9 +10,9 @@ All builds are attached to the [latest release](https://github.com/Kyzenkms/kyze
 
 | App | Download | Also on the site |
 | --- | --- | --- |
-| Windows (installer) | [Kakumei-Setup-0.1.5.exe](downloads/Kakumei-Setup-0.1.5.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.5.exe |
-| Android — arm64-v8a (most phones) | [kakumei-1.0.0-arm64-v8a.apk](downloads/kakumei-1.0.0-arm64-v8a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.0.apk |
-| Android — armeabi-v7a (older 32-bit) | [kakumei-1.0.0-armeabi-v7a.apk](downloads/kakumei-1.0.0-armeabi-v7a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.0.apk |
+| Windows (installer) | [Kakumei-Setup-0.1.6.exe](downloads/Kakumei-Setup-0.1.6.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe |
+| Android — arm64-v8a (most phones) | [kakumei-1.0.1-arm64-v8a.apk](downloads/kakumei-1.0.1-arm64-v8a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.1.apk |
+| Android — armeabi-v7a (older 32-bit) | [kakumei-1.0.1-armeabi-v7a.apk](downloads/kakumei-1.0.1-armeabi-v7a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.1.apk |
 
 The universal APK (~146 MB) exceeds GitHub's 100 MB commit limit, so it lives on the site and on the release page. If you don't know your phone's architecture, pick arm64-v8a — every modern Android device uses it.
 
@@ -21,7 +21,7 @@ The universal APK (~146 MB) exceeds GitHub's 100 MB commit limit, so it lives on
 The installer is not code-signed, so Windows shows a SmartScreen warning when it's downloaded in a browser. To skip it, download from the command line instead — open Command Prompt (Win + R → `cmd`) and run:
 
 ```cmd
-curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.5.exe && %TEMP%\Kakumei.exe
+curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe && %TEMP%\Kakumei.exe
 ```
 
 Files fetched this way don't carry the browser's Mark of the Web, so the installer opens without the warning.

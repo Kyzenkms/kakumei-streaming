@@ -16,29 +16,12 @@ export const SUB_COLORS = [
   { label: 'Mint', value: '#4ade80' },
 ] as const;
 
-export const SUB_SIZES = [
-  { label: 'Small', value: 12 },
-  { label: 'Default', value: 15 },
-  { label: 'Large', value: 19 },
-  { label: 'Huge', value: 25 },
-] as const;
-
-// Distance from the bottom of the video block, in px.
-export const SUB_POSITIONS = [
-  { label: 'Default', value: 12 },
-  { label: 'Lower', value: 4 },
-  { label: 'Raised', value: 46 },
-  { label: 'High', value: 86 },
-  { label: 'Very High', value: 126 },
-] as const;
-
-export const SUB_SYNCS = [
-  { label: '-1.0s Early', value: -1 },
-  { label: '-0.5s Early', value: -0.5 },
-  { label: 'Normal', value: 0 },
-  { label: '+0.5s Delay', value: 0.5 },
-  { label: '+1.0s Delay', value: 1 },
-] as const;
+// Slider ranges — continuous bars, no fixed presets.
+export const SUB_RANGES = {
+  size: { min: 10, max: 34, step: 1 },
+  position: { min: 0, max: 90, step: 1 },
+  sync: { min: -5, max: 5, step: 0.1 },
+} as const;
 
 function timeToSec(raw: string): number {
   const parts = String(raw || '')

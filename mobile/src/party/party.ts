@@ -5,11 +5,13 @@
 // config and the same data-channel message protocol, so a phone can host or
 // join a party created on the website (and vice versa) without either side
 // knowing the other exists.
-import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCSessionDescription,
-} from 'react-native-webrtc';
+// Web-safe: webrtc is loaded lazily on the first party connection so web
+// bundles (and the player UI) boot even where the native module is absent.
+let rtcModule: any = null;
+function rtc(): any {
+  if (rtcModule === null) rtcModule = require('react-native-webrtc');
+  return rtcModule;
+}
 import { SignalClient, randomToken, SignalMessage } from './signal';
 import { encodeMsg, decodeMsg, concatBuffers } from './binary';
 
@@ -142,7 +144,7 @@ class PartyService {
       this.links.delete(src);
     }
 
-    const pc = new RTCPeerConnection(RTC_CONFIG);
+    const pc = new (rtc().RTCPeerConnection as any)(RTC_CONFIG);
     const link = this.makeLink(pc);
     this.links.set(src, link);
     // Web initiator creates the channel with its label; we receive it here.
@@ -174,7 +176,7 @@ class PartyService {
     };
 
     try {
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      await pc.setRemoteDescription(new (rtc().RTCSessionDescription as any)(payload.sdp));
       for (const ice of link.pendingIce.splice(0)) {
         try {
           await pc.addIceCandidate(ice);
@@ -195,7 +197,7 @@ class PartyService {
     const link = this.isHost ? this.links.get(src) : this.hostLink;
     if (!this.isHost && msg.src !== this.hostPeerId()) return;
     if (!link) return;
-    const ice = new RTCIceCandidate({
+    const ice = new (rtc().RTCIceCandidate as any)({
       candidate: cand.candidate,
       sdpMid: cand.sdpMid,
       sdpMLineIndex: cand.sdpMLineIndex,
@@ -261,7 +263,7 @@ class PartyService {
       const signal = new SignalClient();
       this.signal = signal;
 
-      const pc = new RTCPeerConnection(RTC_CONFIG);
+      const pc = new (rtc().RTCPeerConnection as any)(RTC_CONFIG);
       const link = this.makeLink(pc);
       this.hostLink = link;
 
@@ -293,7 +295,7 @@ class PartyService {
       signal.on('ANSWER', async (msg) => {
         if (msg.src !== hostPeerId) return;
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+          await pc.setRemoteDescription(new (rtc().RTCSessionDescription as any)(msg.payload.sdp));
           for (const ice of link.pendingIce.splice(0)) {
             try {
               await pc.addIceCandidate(ice);

@@ -10,9 +10,9 @@ All builds are attached to the [latest release](https://github.com/Kyzenkms/kyze
 
 | App | Download | Also on the site |
 | --- | --- | --- |
-| Windows (installer) | [Kakumei-Setup-0.1.6.exe](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.2/Kakumei-Setup-0.1.6.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe |
-| Android — arm64-v8a (most phones) | [kakumei-1.0.2-arm64-v8a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.2/kakumei-1.0.2-arm64-v8a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.2.apk |
-| Android — armeabi-v7a (older 32-bit) | [kakumei-1.0.2-armeabi-v7a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.2/kakumei-1.0.2-armeabi-v7a.apk) | https://stream.kyzenhub.site/downloads/kakumei-1.0.2.apk |
+| Windows (installer) | [Kakumei-Setup-0.1.6.exe](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.3/Kakumei-Setup-0.1.6.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe |
+| Android — arm64-v8a (most phones) | [kakumei-1.0.3-arm64-v8a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.3/kakumei-1.0.3-arm64-v8a.apk) | https://stream.kyzenhub.site/downloads/kakumei-android-1.0.3.apk |
+| Android — armeabi-v7a (older 32-bit) | [kakumei-1.0.3-armeabi-v7a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.3/kakumei-1.0.3-armeabi-v7a.apk) | https://stream.kyzenhub.site/downloads/kakumei-android-1.0.3.apk |
 
 The universal APK (~146 MB) exceeds GitHub's 100 MB commit limit, so it lives on the site and on the release page. If you don't know your phone's architecture, pick arm64-v8a — every modern Android device uses it.
 

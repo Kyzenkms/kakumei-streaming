@@ -15,7 +15,7 @@ import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
 import { WatchPartySheet } from '../../../components/WatchPartySheet';
 import { party } from '../../../party/party';
-import { cueTextAt, parseVtt, SUB_COLORS, SUB_POSITIONS, SUB_SIZES, SUB_SYNCS, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
+import { cueTextAt, parseVtt, SUB_COLORS, SUB_RANGES, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
 
 type ExtServer = { key: string; label: string; url: string };
 
@@ -556,7 +556,7 @@ function Player({
   const insets = useSafeAreaInsets();
   const player = useVideoPlayer({ uri: src, contentType: contentTypeFor(src), headers: headersFor(src) } as any, (p) => {
     p.loop = false;
-    p.timeUpdateEventInterval = 0.5;
+    p.timeUpdateEventInterval = 0.25;
     // Buffer 30s ahead but start at a 1s runway so streams open fast; 1s seek
     // tolerance lets the decoder snap to keyframes instead of re-buffering for
     // an exact frame on every scrub release.
@@ -577,6 +577,7 @@ function Player({
   const [tracks, setTracks] = useState<any[]>([]);
   const [activeTrack, setActiveTrack] = useState<any>(null);
   const [seekHint, setSeekHint] = useState<number | null>(null);
+  const [pipNote, setPipNote] = useState(false);
   const [nextCancelled, setNextCancelled] = useState(false);
   const [subIdx, setSubIdx] = useState(-1);
   const [fetchedCues, setFetchedCues] = useState<{ url: string; cues: Cue[] } | null>(null);
@@ -853,11 +854,15 @@ function Player({
         <Text style={[styles.hiccup, { color: t.danger }]}>Playback hiccup — switch server below.</Text>
       )}
 
+      {pipNote && (
+        <Text style={[styles.hiccup, { color: '#f59e0b' }]}>Picture-in-picture is not supported on this device.</Text>
+      )}
+
       {controls && (
         <>
           {/* Top bar */}
           <View style={[styles.topBar, { paddingTop: insetTop + 6 }]}>
-            <Pressable onPress={() => { if (fullscreen) onFsChange?.(false); else router.back(); }} hitSlop={10} style={styles.iconBtn}>
+            <Pressable onPress={() => { if (fullscreen) onFsChange?.(false); else router.back(); }} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </Pressable>
             <View style={{ flex: 1 }}>
@@ -865,11 +870,11 @@ function Player({
               {!!subtitle && <Text style={styles.topSub} numberOfLines={1}>{subtitle}</Text>}
             </View>
             {qualities.length > 0 && (
-              <Pressable onPress={openSettings} hitSlop={8} style={styles.qualBadge}>
+              <Pressable onPress={openSettings} hitSlop={10} style={({ pressed }) => [styles.qualBadge, pressed && { opacity: 0.7 }]}>
                 <Text style={styles.qualBadgeText} numberOfLines={1}>{qualities.find((q) => q.active)?.label || 'Auto'}</Text>
               </Pressable>
             )}
-            <Pressable onPress={onOpenParty} hitSlop={10} style={[styles.iconBtn, inParty && styles.iconBtnActive]}>
+            <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, inParty && styles.iconBtnActive, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
               <Ionicons name="people" size={19} color={inParty ? '#fff' : '#e5e7eb'} />
               {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
             </Pressable>
@@ -912,21 +917,21 @@ function Player({
               <Text style={styles.timeText}>{fmtTime(dur)}</Text>
             </View>
             <View style={styles.btnRow}>
-              <Pressable onPress={() => setRate(speed === 1 ? 1.5 : speed === 1.5 ? 2 : speed === 2 ? 0.5 : 1)} style={styles.textBtn} hitSlop={8}>
+              <Pressable onPress={() => setRate(speed === 1 ? 1.5 : speed === 1.5 ? 2 : speed === 2 ? 0.5 : 1)} style={({ pressed }) => [styles.textBtn, pressed && { opacity: 0.6 }]} hitSlop={12}>
                 <Text style={styles.textBtnLabel}>{speed}x</Text>
               </Pressable>
               <View style={{ flex: 1 }} />
-              <Pressable onPress={onOpenParty} style={styles.iconBtn} hitSlop={8}>
+              <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
                 <Ionicons name={inParty ? 'people' : 'people-outline'} size={20} color={inParty ? t.accent : '#fff'} />
                 {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
               </Pressable>
-              <Pressable onPress={openSettings} style={styles.iconBtn} hitSlop={8}>
+              <Pressable onPress={openSettings} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
                 <Ionicons name="settings-outline" size={20} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { try { videoViewRef.current?.startPictureInPicture(); } catch {} }} style={styles.iconBtn} hitSlop={8}>
+              <Pressable onPress={() => { try { videoViewRef.current?.startPictureInPicture(); } catch { setPipNote(true); setTimeout(() => setPipNote(false), 3000); } }} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]} hitSlop={12}>
                 <Ionicons name="browsers-outline" size={20} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={8}>
+              <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={12}>
                 <Ionicons name={fullscreen ? 'contract' : 'expand'} size={22} color="#fff" />
               </Pressable>
             </View>
@@ -934,14 +939,14 @@ function Player({
         </>
       )}
 
-      {/* Player settings — quality, speed, styled subtitles, watch party. */}
-      <Modal visible={showSettings} transparent animationType="slide" onRequestClose={() => setShowSettings(false)}>
+      {/* Player settings — compact popover like the web player: quality,
+          speed, subtitle track/styling, watch party. */}
+      <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalWrap}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)} />
-        <View style={[styles.settingsSheet, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border, paddingBottom: insets.bottom + 22 }]}>
-          <View style={styles.sheetHandle} />
+        <View style={[styles.settingsPop, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border, top: insetTop + 76 }]}>
           <Text style={[styles.sheetTitle, { color: t.text }]}>Player</Text>
-          <ScrollView style={{ maxHeight: 430 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
             {qualities.length > 1 && (
               <>
                 <Text style={[styles.sheetSection, { color: t.muted }]}>QUALITY</Text>
@@ -983,30 +988,9 @@ function Player({
                         <Pressable key={c.value} onPress={() => patchSubStyle({ color: c.value })} accessibilityLabel={c.label} style={[styles.colorDot, { backgroundColor: c.value }, subStyle.color === c.value && styles.colorDotActive]} />
                       ))}
                     </View>
-                    <Text style={[styles.sheetSection, { color: t.muted }]}>TEXT SIZE</Text>
-                    <View style={styles.optionWrap}>
-                      {SUB_SIZES.map((o) => (
-                        <Pressable key={o.label} onPress={() => patchSubStyle({ size: o.value })} style={[styles.optionChip, subStyle.size === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-                          <Text style={[styles.optionText, { color: subStyle.size === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <Text style={[styles.sheetSection, { color: t.muted }]}>POSITION</Text>
-                    <View style={styles.optionWrap}>
-                      {SUB_POSITIONS.map((o) => (
-                        <Pressable key={o.label} onPress={() => patchSubStyle({ position: o.value })} style={[styles.optionChip, subStyle.position === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-                          <Text style={[styles.optionText, { color: subStyle.position === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <Text style={[styles.sheetSection, { color: t.muted }]}>SYNC</Text>
-                    <View style={styles.optionWrap}>
-                      {SUB_SYNCS.map((o) => (
-                        <Pressable key={o.label} onPress={() => patchSubStyle({ sync: o.value })} style={[styles.optionChip, subStyle.sync === o.value && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-                          <Text style={[styles.optionText, { color: subStyle.sync === o.value ? t.accent : t.secondary }]}>{o.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                    <SliderBar label="TEXT SIZE" value={subStyle.size} min={SUB_RANGES.size.min} max={SUB_RANGES.size.max} step={SUB_RANGES.size.step} display={`${Math.round(subStyle.size)} px`} onChange={(n) => patchSubStyle({ size: n })} />
+                    <SliderBar label="POSITION" value={subStyle.position} min={SUB_RANGES.position.min} max={SUB_RANGES.position.max} step={SUB_RANGES.position.step} display={`${Math.round(subStyle.position)} px`} onChange={(n) => patchSubStyle({ position: n })} />
+                    <SliderBar label="SYNC" value={subStyle.sync} min={SUB_RANGES.sync.min} max={SUB_RANGES.sync.max} step={SUB_RANGES.sync.step} display={`${subStyle.sync > 0 ? '+' : ''}${subStyle.sync.toFixed(1)}s`} onChange={(n) => patchSubStyle({ sync: n })} />
                   </>
                 )}
               </>
@@ -1045,9 +1029,49 @@ function Player({
   );
 }
 
+// Continuous control bar — subtitle size/position/sync are drag bars, not
+// presets, so any caption track can be matched to the picture.
+function SliderBar({ label, value, min, max, step, display, onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; display: string; onChange: (n: number) => void;
+}) {
+  const wRef = useRef(1);
+  const setFromX = useCallback((x: number) => {
+    const ratio = Math.max(0, Math.min(1, x / wRef.current));
+    let raw = min + ratio * (max - min);
+    if (step) raw = Math.round(raw / step) * step;
+    onChange(Math.round(raw * 1000) / 1000);
+  }, [min, max, step, onChange]);
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => setFromX(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => setFromX(e.nativeEvent.locationX),
+    }),
+  ).current;
+  const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  return (
+    <View style={{ marginTop: 6 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: 'rgba(255,255,255,0.55)' }}>{label}</Text>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.85)' }}>{display}</Text>
+      </View>
+      <View
+        style={{ height: 26, justifyContent: 'center' }}
+        onLayout={(e) => { wRef.current = e.nativeEvent.layout.width || 1; }}
+        {...pan.panHandlers}
+      >
+        <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)' }}>
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratio * 100}%`, borderRadius: 2, backgroundColor: '#a855f7' }} />
+          <View style={{ position: 'absolute', top: -5, left: `${ratio * 100}%`, width: 14, height: 14, borderRadius: 7, backgroundColor: '#fff', marginLeft: -7 }} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
+  screen: { flex: 1 },  videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
   videoWrapFull: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   videoFill: { width: '100%', height: '100%', backgroundColor: '#000' },
   playerRoot: { flex: 1, position: 'relative' },
@@ -1057,10 +1081,10 @@ const styles = StyleSheet.create({
   seekHint: { position: 'absolute', alignSelf: 'center', top: '44%', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
   seekHintText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   hiccup: { position: 'absolute', bottom: 6, alignSelf: 'center', fontSize: 12, fontWeight: '700' },
-  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingBottom: 10 },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingBottom: 6 },
   topTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
   topSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
-  iconBtn: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   iconBtnActive: { backgroundColor: 'rgba(168,85,247,0.35)' },
   hostDot: { position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: 4 },
   qualBadge: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'rgba(0,0,0,0.35)', maxWidth: 76 },
@@ -1084,21 +1108,20 @@ const styles = StyleSheet.create({
   textBtn: { paddingHorizontal: 8, paddingVertical: 8 },
   textBtnLabel: { color: '#fff', fontSize: 12, fontWeight: '800' },
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
-  bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 108 },
+  bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 },
   subOverlay: { position: 'absolute', left: 14, right: 14, alignItems: 'center' },
   subText: { textAlign: 'center', fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-  sheetHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)', marginBottom: 10 },
   colorDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)' },
   colorDotActive: { borderColor: '#a855f7', borderWidth: 3 },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
-  settingsSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, padding: 18, paddingBottom: 26 },
-  sheetTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
-  sheetSection: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 12, marginBottom: 6 },
+  modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
+  settingsPop: { position: 'absolute', right: 12, width: 268, maxHeight: '70%', borderRadius: 18, borderWidth: 1, padding: 14 },
+  sheetTitle: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
+  sheetSection: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 10, marginBottom: 6 },
   sheetNote: { fontSize: 11, marginTop: 10 },
-  optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionChip: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
-  optionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 2 },
+  optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  optionChip: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  optionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2 },
   optionText: { fontSize: 13, fontWeight: '700' },
   reactionFloat: { position: 'absolute', right: 14, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
   reactionEmoji: { fontSize: 24 },
@@ -1110,10 +1133,10 @@ const styles = StyleSheet.create({
   loadingSub: { fontSize: 12, marginTop: 2 },
   retry: { borderRadius: 14, paddingHorizontal: 26, paddingVertical: 12, marginTop: 8 },
   retryText: { fontSize: 15, fontWeight: '700' },
-  meta: { padding: 16, gap: 4 },
-  title: { fontSize: 19, fontWeight: '800' },
+  meta: { padding: 12, gap: 3 },
+  title: { fontSize: 17, fontWeight: '800' },
   sub: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
   rowLabel: { width: '100%', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 },
   recTitle: { fontSize: 17, fontWeight: '700', marginBottom: 10 },
   chip: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

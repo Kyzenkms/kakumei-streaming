@@ -21,8 +21,9 @@
 
 	handle /downloads/* {
 		header Content-Disposition attachment
-		# Artifacts are versioned filenames (immutable) — safe for edge cache.
-		header Cache-Control "public, max-age=31536000, immutable"
+		# Versioned names are usually immutable, but a re-upload of the same
+		# name would edge-cache the stale copy for a year — keep the TTL short.
+		header Cache-Control "public, max-age=600"
 		file_server
 	}
 	# Root-level static files from the web build (crawlers + browsers request

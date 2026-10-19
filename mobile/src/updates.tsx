@@ -26,6 +26,11 @@ export function isNewer(a: string, b: string): boolean {
 }
 
 const WHATS_NEW: Record<string, string[]> = {
+  '1.0.6': [
+    'Episode lists now come from NetMirror itself, so seasons and episode numbers match exactly',
+    'Series opened from search show the correct episodes right away',
+    'Next episode follows NetMirror ordering, skipping episodes the source does not carry',
+  ],
   '1.0.5': [
     'Colour picker rebuilt: tap a hue, then a tone',
     'Seek bar no longer snaps back after seeking',

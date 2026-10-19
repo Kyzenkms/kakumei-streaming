@@ -129,6 +129,8 @@ export const api = {
 
     return list.slice(0, 30);
   },
+  nmContent: async (id: string, type: string) =>
+    get<any>(`/api/netmirror/content?id=${encodeURIComponent(id)}&type=${type}`),
   languages: async (title: string) => {
     if (!title) return [];
     try {

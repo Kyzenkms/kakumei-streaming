@@ -19,6 +19,20 @@ import { cueTextAt, parseVtt, SUB_COLORS, SUB_RANGES, SUB_STYLE_DEFAULT, type Cu
 
 type ExtServer = { key: string; label: string; url: string };
 
+// NetMirror season rows: [{se, ep, allEp}] where allEp is a comma list of the
+// episodes the source actually groups under that season (gaps included).
+function nmEpisodeNums(rows: any[], se: number): number[] {
+  const row = (Array.isArray(rows) ? rows : []).find((s: any) => Number(s?.se) === se);
+  if (!row) return [];
+  const listed = String(row.allEp || '')
+    .split(',')
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (listed.length) return Array.from(new Set(listed));
+  const count = Math.max(0, Math.min(500, Number(row.ep) || 0));
+  return Array.from({ length: count }, (_, i) => i + 1);
+}
+
 // Deep links / shared party links open with no history — fall back to home
 // instead of expo-router's "GO_BACK was not handled" warning.
 function backOrHome() {
@@ -61,11 +75,13 @@ export default function PlayScreen() {
   const [attempt, setAttempt] = useState(0);
   const [recs, setRecs] = useState<any[]>([]);
   const [dubs, setDubs] = useState<any[]>([]);
-  // TV episode picker: TMDB id resolved for NetMirror items, then seasons and
-  // the episode list for the season being browsed.
-  const [tmdbId, setTmdbId] = useState(!isNetMirrorId ? id : '');
+  // TV episode picker. TMDB ids use TMDB seasons; NetMirror items use the
+  // source's own season/episode metadata (TMDB groupings don't match pack ids).
+  const [tmdbId] = useState(!isNetMirrorId ? id : '');
   const [tvSeasons, setTvSeasons] = useState<any[]>([]);
   const [tvEps, setTvEps] = useState<any[]>([]);
+  const [nmSeasons, setNmSeasons] = useState<any[]>([]);
+  const [nmFor, setNmFor] = useState('');
   const [pickSeason, setPickSeason] = useState(season);
   const [showEpsList, setShowEpsList] = useState(false);
   const [epsOpen, setEpsOpen] = useState(true);
@@ -182,37 +198,55 @@ const [fsFull, setFsFull] = useState(false);
     return () => { alive = false; };
   }, [data?.title, expectedTitle]);
 
-  // Episode picker data: NetMirror ids are not TMDB ids, so map to the closest
-  // TMDB match by title first (same pattern as More Like This).
+  // NetMirror season/episode metadata for the picker. The source returns
+  // [{se, ep, allEp}] exactly as it groups episodes (short seasons, skipped
+  // specials), so it is authoritative over any TMDB season numbering.
   useEffect(() => {
-    if (!isTV || !isNetMirrorId || tmdbId) return;
-    // Wait for the stream resolve so the picker metadata doesn't slow playback.
-    if (!data) return;
-    const q = expectedTitle || data?.title || '';
-    if (!q) return;
+    if (!isTV || !isNetMirrorId || !id) return;
     let alive = true;
-    (async () => {
-      try {
-        const match = await pickTmdbMatchCached(q, 'tv', epCtxRef.current.season, epCtxRef.current.episode);
-        if (alive && match?.id) setTmdbId(String(match.id));
-      } catch { /* picker falls back to Prev/Next only */ }
-    })();
+    api.nmContent(id, type)
+      .then((c) => {
+        if (!alive) return;
+        const rows = Array.isArray(c?.season)
+          ? c.season.filter((s: any) => Number(s?.se) > 0)
+          : [];
+        setNmSeasons(rows);
+        if (rows.length) {
+          setPickSeason((cur) => (rows.some((s: any) => Number(s.se) === cur) ? cur : Number(rows[0].se)));
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (alive) setNmFor(`nm|${id}`); });
     return () => { alive = false; };
-  }, [isTV, isNetMirrorId, tmdbId, expectedTitle, data?.title, data]);
+  }, [isTV, isNetMirrorId, id, type]);
 
-  // Binge prewarm: resolve the next episode in the background once playback
-  // is up, so "Next" lands on a warm server cache instead of a cold 20-30s
-  // resolve. Episodes resolve per-episode on the backend, so this is the one
-  // client-side lever that actually removes the wait.
+  // Binge prewarm: resolve the NEXT THREE episodes in the background once
+  // playback is up, so episode hops land on a warm server cache instead of a
+  // cold 15-25s resolve. Prewarming only +1 left every other click cold (the
+  // "ep3 loads, ep4 stalls" report), because the user skips around faster than
+  // one prewarm completes. Episodes resolve per-episode on the backend, so
+  // this is the one client-side lever that actually removes the wait.
   useEffect(() => {
     if (!isTV || !data || !id) return;
-    const nextEp = episode + 1;
-    if (tvEps.length && !tvEps.some((e: any) => Number(e?.episode_number) === nextEp)) return;
-    const timer = setTimeout(() => {
-      prefetchSources({ id, type, season, episode: nextEp, title: expectedTitle, language, isNetMirror: isNetMirrorId }).catch(() => {});
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [isTV, data, id, type, season, episode, expectedTitle, language, isNetMirrorId, tvEps]);
+    const nmNums = isNetMirrorId ? nmEpisodeNums(nmSeasons, season) : [];
+    const idx = nmNums.indexOf(episode);
+    const targets: number[] = [];
+    if (nmNums.length) {
+      let i = idx >= 0 ? idx : nmNums.indexOf(episode);
+      if (i >= 0) while (targets.length < 3 && i + 1 < nmNums.length) targets.push(nmNums[++i]);
+    } else {
+      for (let e2 = episode + 1; targets.length < 3; e2++) {
+        if (tvEps.length && !tvEps.some((e: any) => Number(e?.episode_number) === e2)) break;
+        targets.push(e2);
+      }
+    }
+    const timers = targets.map((ep2, i) =>
+      setTimeout(() => {
+        prefetchSources({ id, type, season, episode: ep2, title: expectedTitle, language, isNetMirror: isNetMirrorId }).catch(() => {});
+      }, 4000 + i * 6000),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [isTV, data, id, type, season, episode, expectedTitle, language, isNetMirrorId, tvEps, nmSeasons]);
 
   useEffect(() => {
     if (!isTV || !tmdbId) return;
@@ -370,7 +404,10 @@ const [fsFull, setFsFull] = useState(false);
       </View>
     );
   }
-  if (!data || dataFor !== reqKey) {
+  // Same title, different episode: keep the screen (episode list, title, chat)
+  // and resolve inside the video area instead of swapping to a blank page.
+  const episodeHop = !!data && dataFor !== reqKey && dataFor.startsWith(`${type}|${id}|`);
+  if (!data || (dataFor !== reqKey && !episodeHop)) {
     return (
       <View style={[styles.center, { backgroundColor: t.bg }]}>
         <Pressable onPress={backOrHome} hitSlop={12} style={[styles.floatBack, { top: insets.top + 8 }]}>
@@ -382,6 +419,7 @@ const [fsFull, setFsFull] = useState(false);
       </View>
     );
   }
+  const pendingHop = dataFor !== reqKey;
 
   const title = data.title || expectedTitle || 'Now Playing';
   const qualityRank = (q: string) => {
@@ -418,10 +456,24 @@ const [fsFull, setFsFull] = useState(false);
     .slice(0, 14);
   const qualities = direct.map((s: any, i: number) => ({ label: s.quality || 'Auto', active: i === active }));
   const subsList: { label?: string; url: string }[] = (Array.isArray(data?.subtitles) ? data.subtitles : []).filter((s: any) => s && typeof s.url === 'string' && s.url);
-  const epsKey = `${tmdbId}|${pickSeason}`;
-  const epsLoading = isTV && !!tmdbId && epsFor !== epsKey;
+  // Picker data: NetMirror rows come straight from the source metadata,
+  // TMDB (non-NetMirror ids) from the TMDB season endpoints.
+  const pickerSeasons = isNetMirrorId
+    ? nmSeasons.map((s: any) => ({ season_number: Number(s.se), episode_count: Number(s.ep) || 0 }))
+    : tvSeasons;
+  const pickerEps = isNetMirrorId
+    ? nmEpisodeNums(nmSeasons, pickSeason).map((n) => ({ episode_number: n, name: `Episode ${n}` }))
+    : tvEps;
+  const epsKey = `${isNetMirrorId ? `nm|${id}` : tmdbId}|${pickSeason}`;
+  const epsLoading = isTV && (isNetMirrorId ? nmFor !== `nm|${id}` : !!tmdbId && epsFor !== epsKey);
+  const nextEpisode = (() => {
+    if (!isNetMirrorId) return episode + 1;
+    const nums = nmEpisodeNums(nmSeasons, season);
+    const i = nums.indexOf(episode);
+    return i >= 0 && i + 1 < nums.length ? nums[i + 1] : episode + 1;
+  })();
   const shownN = epsShown.key === epsKey ? epsShown.n : 20;
-  const epsVisible = tvEps.slice(0, shownN);
+  const epsVisible = pickerEps.slice(0, shownN);
 
   // Playback failover for the NetMirror CDN path: signed CDN URLs stall or
   // expire mid-watch. Try the next source, then re-resolve fresh (server
@@ -444,7 +496,12 @@ const [fsFull, setFsFull] = useState(false);
   return (
     <View style={[styles.screen, { backgroundColor: t.bg }]}>
       <View style={[styles.videoWrap, fsFull && styles.videoWrapFull, showParty && !fsFull && styles.videoWrapParty]}>
-        {ext && extFor === reqKey ? (
+        {pendingHop ? (
+          <View style={[styles.videoFill, styles.center, { backgroundColor: '#000' }]}>
+            <ActivityIndicator color={t.accent} />
+            <Text style={[styles.loadingSub, { color: t.muted }]}>Starting S{season} E{episode}…</Text>
+          </View>
+        ) : ext && extFor === reqKey ? (
           <WebView source={{ uri: ext.url }} style={styles.videoFill} allowsFullscreenVideo allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
         ) : direct.length ? (
           <Player
@@ -466,10 +523,10 @@ const [fsFull, setFsFull] = useState(false);
             onSelectQuality={(i) => { setActive(i); setFailNote(`Quality: ${direct[i]?.quality || 'Auto'}`); }}
             onPlayPauseEvent={onPlayPauseEvent}
             onSeekEvent={onSeekEvent}
-            nextLabel={isTV ? `S${season} E${episode + 1}` : undefined}
-            onNext={isTV ? () => goEp(season, episode + 1) : undefined}
-            tvSeasons={isTV ? tvSeasons : undefined}
-            tvEpisodes={isTV ? tvEps : undefined}
+            nextLabel={isTV ? `S${season} E${nextEpisode}` : undefined}
+            onNext={isTV ? () => goEp(season, nextEpisode) : undefined}
+tvSeasons={isTV ? pickerSeasons : undefined}
+          tvEpisodes={isTV ? pickerEps : undefined}
             tvSeason={pickSeason}
             curSeason={season}
             curEpisode={episode}
@@ -525,7 +582,7 @@ const [fsFull, setFsFull] = useState(false);
             <Pressable onPress={() => { setPickSeason(season); setShowEpsList(true); }} style={styles.tab}>
               <Text style={[styles.tabText, { color: t.accent }]}>S{season} E{episode} ▾</Text>
             </Pressable>
-            <Pressable onPress={() => goEp(season, episode + 1)} style={styles.tab}>
+            <Pressable onPress={() => goEp(season, nextEpisode)} style={styles.tab}>
               <Text style={[styles.tabText, { color: t.secondary }]}>Next ›</Text>
             </Pressable>
           </View>
@@ -543,20 +600,20 @@ const [fsFull, setFsFull] = useState(false);
             })}
           </View>
         )}
-        {isTV && (tvSeasons.length > 0 || tvEps.length > 0) && (
+        {isTV && (pickerSeasons.length > 0 || pickerEps.length > 0) && (
           <View style={{ marginTop: 18 }}>
             <Pressable onPress={() => setEpsOpen((o) => !o)} hitSlop={8} style={styles.epsHead}>
               <Text style={[styles.recTitle, { color: t.text, marginBottom: 0 }]}>
-                Episodes{!epsLoading && tvEps.length ? ` · ${tvEps.length} in S${pickSeason}` : ''}
+                Episodes{!epsLoading && pickerEps.length ? ` · ${pickerEps.length} in S${pickSeason}` : ''}
               </Text>
               <Ionicons name={epsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={t.muted} />
             </Pressable>
             {epsOpen && (
               <>
-                {tvSeasons.length > 1 && (
+                {pickerSeasons.length > 1 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
                     <View style={{ flexDirection: 'row' }}>
-                      {tvSeasons.map((s: any) => {
+                      {pickerSeasons.map((s: any) => {
                         const on = pickSeason === s.season_number;
                         return (
                           <Pressable key={s.season_number} onPress={() => setPickSeason(s.season_number)} style={[styles.tab, on && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
@@ -567,8 +624,8 @@ const [fsFull, setFsFull] = useState(false);
                     </View>
                   </ScrollView>
                 )}
-                {epsLoading && !tvEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>Loading episodes…</Text>}
-                {!epsLoading && !tvEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>No episodes listed for this season.</Text>}
+                {epsLoading && !pickerEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>Loading episodes…</Text>}
+                {!epsLoading && !pickerEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>No episodes listed for this season.</Text>}
                 {(epsLoading ? [] : epsVisible).map((ep: any) => {
                   const isCur = season === pickSeason && episode === ep.episode_number;
                   return (
@@ -582,9 +639,9 @@ const [fsFull, setFsFull] = useState(false);
                     </Pressable>
                   );
                 })}
-                {!epsLoading && tvEps.length > shownN && (
+                {!epsLoading && pickerEps.length > shownN && (
                   <Pressable onPress={() => setEpsShown({ key: epsKey, n: shownN + 24 })} style={styles.showMore}>
-                    <Text style={[styles.showMoreText, { color: t.accent }]}>Show more · {tvEps.length - shownN} left</Text>
+                    <Text style={[styles.showMoreText, { color: t.accent }]}>Show more · {pickerEps.length - shownN} left</Text>
                   </Pressable>
                 )}
               </>
@@ -610,8 +667,8 @@ const [fsFull, setFsFull] = useState(false);
           onClose={() => setShowEpsList(false)}
           padTop={insets.top + 52}
           t={t}
-          seasons={tvSeasons}
-          episodes={tvEps}
+          seasons={pickerSeasons}
+          episodes={pickerEps}
           tvSeason={pickSeason}
           curSeason={season}
           curEpisode={episode}

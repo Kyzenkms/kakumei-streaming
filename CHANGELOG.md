@@ -1,5 +1,17 @@
 # KyzenStream - Complete Changelog
 
+## Version 1.0.6 - Episode Switching & Resolve Speed (October 19, 2026)
+
+### Mobile
+- Switching episodes keeps the player on screen (spinner inside the video area) instead of flashing the full "Resolving stream" page
+- NetMirror series read their season/episode lists from NetMirror itself, including skipped episodes, instead of TMDB
+- The next three episodes prewarm in the background while you watch, so binge hops land on a warm cache
+- Android: versionCode 12, versionName 1.0.6
+
+### Backend
+- Cold stream resolves cut from 24-30s to roughly 6-10s: subtitle lookup parallelized, dash fallback runs concurrently, HLS bridge capped at a 5s deadline, sibling episodes raced
+- Last-good results are saved on every success path, so revisiting an episode stays instant
+
 ## Version 1.0.5 - Picker & Playback Fixes (October 19, 2026)
 
 ### Mobile

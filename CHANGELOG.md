@@ -1,5 +1,31 @@
 # KyzenStream - Complete Changelog
 
+## Version 1.0.4 - Player & Personalisation (October 19, 2026)
+
+### Mobile
+- Player rebuilt: dedicated portrait and landscape control layouts, no overlapping transport
+- Compact settings and episodes cards (top-right) instead of full-screen sheets
+- Episode picker: season dropdown + instant search
+- Watch party docks to the right; video shrinks beside chat
+- Audio row shows and highlights the current language/dub
+- Black Luxury (onyx & gold) theme and a custom colour wheel for accents
+- Background play toggle (keeps audio playing when the app is backgrounded)
+- Glassy "What's new" card on first launch after an update
+- Anime-aware TMDB matching (correct anime entry, no live-action mix-ups)
+- Android: versionCode 10, versionName 1.0.4
+## Version 1.0.4 - Player & Personalisation (October 19, 2026)
+
+### Mobile
+- Player rebuilt: dedicated portrait and landscape control layouts, no overlapping transport
+- Compact settings and episodes cards (top-right) instead of full-screen sheets
+- Episode picker: season dropdown + instant search
+- Watch party docks to the right; video shrinks beside chat
+- Audio row shows and highlights the current language/dub
+- Black Luxury (onyx & gold) theme and a custom colour wheel for accents
+- Background play toggle (keeps audio playing when the app is backgrounded)
+- Glassy "What's new" card on first launch after an update
+- Anime-aware TMDB matching (correct anime entry, no live-action mix-ups)
+- Android: versionCode 10, versionName 1.0.4
 ## Version 2.0 - Major UI Overhaul (April 28, 2026)
 
 ### 🎨 UI/UX Improvements

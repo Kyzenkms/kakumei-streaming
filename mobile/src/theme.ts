@@ -66,11 +66,11 @@ const BASE: Record<string, { name: string; desc: string } & Base> = {
     accent: '#3abdf7', accent2: '#818cf8', play: '#3abdf7', onAccent: '#010d15',
   },
   luxury: {
-    name: 'Luxury Black', desc: 'Black & gold',
-    bg: '#050505', surface: '#0e0c07', surface2: '#16130b',
-    border: 'rgba(212,175,55,0.22)', text: '#f7f3e8',
-    secondary: 'rgba(247,243,232,0.72)', muted: 'rgba(247,243,232,0.46)',
-    accent: '#d4af37', accent2: '#e6c76a', play: '#d4af37', onAccent: '#191104',
+    name: 'Black Luxury', desc: 'Onyx & gold',
+    bg: '#000000', surface: '#0b0a06', surface2: '#131007',
+    border: 'rgba(212,175,55,0.26)', text: '#faf6ea',
+    secondary: 'rgba(250,246,234,0.74)', muted: 'rgba(250,246,234,0.46)',
+    accent: '#d4af37', accent2: '#f2d98a', play: '#d4af37', onAccent: '#191104',
   },
 };
 
@@ -104,15 +104,15 @@ function luminance(hex: string): number {
 
 export function getTokens(themeKey: string, accentName: string | null): Tokens {
   const b = BASE[themeKey] || BASE.midnight;
-  const custom = accentName ? ACCENTS.find((a) => a.name === accentName) : null;
-  const accent = custom ? custom.accent : b.accent;
+  const custom = accentName && !accentName.startsWith('#') ? ACCENTS.find((a) => a.name === accentName) : null;
+  const accent = accentName?.startsWith('#') ? accentName : custom ? custom.accent : b.accent;
   return {
     bg: b.bg, surface: b.surface, surface2: b.surface2, border: b.border,
     text: b.text, secondary: b.secondary, muted: b.muted,
     accent, accentSoft: hexToRgba(accent, 0.16),
-    play: custom ? accent : b.play,
+    play: custom || accentName?.startsWith('#') ? accent : b.play,
     danger: '#f87171',
-    onAccent: custom ? (luminance(accent) > 0.45 ? '#191104' : '#ffffff') : b.onAccent,
+    onAccent: custom || accentName?.startsWith('#') ? (luminance(accent) > 0.45 ? '#191104' : '#ffffff') : b.onAccent,
   };
 }
 

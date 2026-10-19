@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, prefetchSources } from '../../../api';
 import { IMG_LARGE } from '../../../theme';
@@ -34,6 +35,8 @@ export default function DetailsScreen() {
   const [seasons, setSeasons] = useState<any[]>([]);
   const [activeSeason, setActiveSeason] = useState(1);
   const [episodes, setEpisodes] = useState<any[]>([]);
+  const [epsFor, setEpsFor] = useState('');
+  const [epsOpen, setEpsOpen] = useState(true);
   const badParams = !type || !id;
 
   useEffect(() => {
@@ -64,7 +67,10 @@ export default function DetailsScreen() {
   useEffect(() => {
     if (!isTV || !media?.id) return;
     let alive = true;
-    api.episodes(String(media.id), activeSeason).then((e) => { if (alive) setEpisodes(Array.isArray(e) ? e : []); }).catch(() => { if (alive) setEpisodes([]); });
+    const key = `${media.id}|${activeSeason}`;
+    api.episodes(String(media.id), activeSeason)
+      .then((e) => { if (alive) { setEpisodes(Array.isArray(e) ? e : []); setEpsFor(key); } })
+      .catch(() => { if (alive) { setEpisodes([]); setEpsFor(key); } });
     return () => { alive = false; };
   }, [media?.id, activeSeason, isTV]);
 
@@ -94,6 +100,8 @@ export default function DetailsScreen() {
   const year = String(media.release_date || media.first_air_date || '').slice(0, 4);
   const epRuntime = Array.isArray(media.episode_run_time) ? media.episode_run_time[0] : null;
   const runtime = media.runtime ? `${Math.floor(media.runtime / 60)}h ${media.runtime % 60}m` : epRuntime ? `${epRuntime}m/episode` : null;
+  const epKey = `${media.id}|${activeSeason}`;
+  const epsLoading = isTV && epsFor !== epKey;
   const playUrl = (lang?: string, s?: number, e?: number) =>
     `/play/${type}/${media.id}?expectedTitle=${encodeURIComponent(title)}${lang ? `&language=${encodeURIComponent(lang)}` : ''}${isTV ? `&season=${s || activeSeason}&episode=${e || 1}` : ''}`;
   const play = (lang?: string, s?: number, e?: number) => {
@@ -144,20 +152,29 @@ export default function DetailsScreen() {
 
         {isTV && seasons.length > 0 && (
           <View style={{ marginTop: 18 }}>
-            <Text style={[styles.h2, { color: t.text }]}>Episodes</Text>
-            <View style={styles.dubRow}>
-              {seasons.map((s: any) => (
-                <Pressable key={s.season_number} onPress={() => setActiveSeason(s.season_number)} style={[styles.dub, { borderColor: activeSeason === s.season_number ? t.accent : t.border, backgroundColor: activeSeason === s.season_number ? t.accentSoft : 'transparent' }]}>
-                  <Text style={[styles.dubText, { color: activeSeason === s.season_number ? t.accent : t.secondary }]}>S{s.season_number}</Text>
-                </Pressable>
-              ))}
-            </View>
-            {episodes.slice(0, 30).map((ep: any) => (
-              <Pressable key={ep.id} onPress={() => play(undefined, activeSeason, ep.episode_number)} style={[styles.ep, { borderColor: t.border }]}>
-                <Text style={[styles.epTitle, { color: t.text }]} numberOfLines={1}>E{ep.episode_number} · {ep.name || 'Episode'}</Text>
-                {!!ep.air_date && <Text style={[styles.epSub, { color: t.muted }]}>{ep.air_date}</Text>}
-              </Pressable>
-            ))}
+            <Pressable onPress={() => setEpsOpen((o) => !o)} hitSlop={8} style={styles.epsHead}>
+              <Text style={[styles.h2, { color: t.text }]}>Episodes{!epsLoading && episodes.length ? ` · ${episodes.length} in S${activeSeason}` : ''}</Text>
+              <Ionicons name={epsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={t.muted} />
+            </Pressable>
+            {epsOpen && (
+              <>
+                <View style={styles.dubRow}>
+                  {seasons.map((s: any) => (
+                    <Pressable key={s.season_number} onPress={() => setActiveSeason(s.season_number)} style={[styles.dub, { borderColor: activeSeason === s.season_number ? t.accent : t.border, backgroundColor: activeSeason === s.season_number ? t.accentSoft : 'transparent' }]}>
+                      <Text style={[styles.dubText, { color: activeSeason === s.season_number ? t.accent : t.secondary }]}>S{s.season_number}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {epsLoading && <Text style={[styles.epsNote, { color: t.muted }]}>Loading episodes…</Text>}
+                {!epsLoading && !episodes.length && <Text style={[styles.epsNote, { color: t.muted }]}>No episodes listed for this season.</Text>}
+                {(epsLoading ? [] : episodes).map((ep: any) => (
+                  <Pressable key={ep.id ?? `e${ep.episode_number}`} onPress={() => play(undefined, activeSeason, ep.episode_number)} style={[styles.ep, { borderColor: t.border }]}>
+                    <Text style={[styles.epTitle, { color: t.text }]} numberOfLines={1}>E{ep.episode_number} · {ep.name || 'Episode'}</Text>
+                    {!!ep.air_date && <Text style={[styles.epSub, { color: t.muted }]}>{ep.air_date}</Text>}
+                  </Pressable>
+                ))}
+              </>
+            )}
           </View>
         )}
 
@@ -184,6 +201,8 @@ const styles = StyleSheet.create({
   half: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 11, alignItems: 'center' },
   halfText: { fontSize: 13, fontWeight: '600' },
   h2: { fontSize: 17, fontWeight: '700', marginTop: 20, marginBottom: 10 },
+  epsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  epsNote: { fontSize: 12, marginTop: 10 },
   dubRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dub: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
   dubText: { fontSize: 12, fontWeight: '700' },

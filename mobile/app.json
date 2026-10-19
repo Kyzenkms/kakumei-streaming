@@ -2,7 +2,7 @@
   "expo": {
     "name": "kakumei-mobile",
     "slug": "kakumei-mobile",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "scheme": "kakumei",
     "icon": "./assets/icon.png",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.kakumei.mobile",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "backgroundColor": "#07070e",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,7 +25,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-video"
+      ["expo-video", { "supportsBackgroundPlayback": true }]
     ]
   }
 }

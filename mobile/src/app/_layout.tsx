@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { PrefsProvider, usePrefs } from '../prefs';
 import { setApiBase } from '../api';
-import { UpdateGate } from '../updates';
+import { UpdateGate, WhatsNew } from '../updates';
 
 function ApplyPrefs() {
   const { t, apiBase } = usePrefs();
@@ -14,7 +14,7 @@ function ApplyPrefs() {
       <Stack screenOptions={{ headerStyle: { backgroundColor: t.bg }, headerTintColor: '#fff', contentStyle: { backgroundColor: t.bg } }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="details/[type]/[id]" options={{ title: 'Details' }} />
-        <Stack.Screen name="play/[type]/[id]" options={{ title: 'Now Playing' }} />
+        <Stack.Screen name="play/[type]/[id]" options={{ headerShown: false }} />
       </Stack>
     </>
   );
@@ -25,6 +25,7 @@ export default function RootLayout() {
     <PrefsProvider>
       <ApplyPrefs />
       <UpdateGate />
+      <WhatsNew />
     </PrefsProvider>
   );
 }

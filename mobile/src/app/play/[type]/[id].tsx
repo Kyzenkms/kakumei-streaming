@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent, useEventListener } from 'expo';
@@ -9,7 +9,7 @@ import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, prefetchSources, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
+import { api, prefetchSources, pickTmdbMatch, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
 import { usePrefs } from '../../../prefs';
 import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
@@ -18,6 +18,13 @@ import { party } from '../../../party/party';
 import { cueTextAt, parseVtt, SUB_COLORS, SUB_RANGES, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
 
 type ExtServer = { key: string; label: string; url: string };
+
+// Deep links / shared party links open with no history — fall back to home
+// instead of expo-router's "GO_BACK was not handled" warning.
+function backOrHome() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/' as any);
+}
 
 function tmdbEmbeds(tmdbId: string, isTV: boolean, s: number, e: number): ExtServer[] {
   if (!tmdbId || tmdbId.includes('_') === false && isNaN(Number(tmdbId))) return [];
@@ -54,6 +61,16 @@ export default function PlayScreen() {
   const [attempt, setAttempt] = useState(0);
   const [recs, setRecs] = useState<any[]>([]);
   const [dubs, setDubs] = useState<any[]>([]);
+  // TV episode picker: TMDB id resolved for NetMirror items, then seasons and
+  // the episode list for the season being browsed.
+  const [tmdbId, setTmdbId] = useState(!isNetMirrorId ? id : '');
+  const [tvSeasons, setTvSeasons] = useState<any[]>([]);
+  const [tvEps, setTvEps] = useState<any[]>([]);
+  const [pickSeason, setPickSeason] = useState(season);
+  const [showEpsList, setShowEpsList] = useState(false);
+  const [epsOpen, setEpsOpen] = useState(true);
+  const [epsFor, setEpsFor] = useState('');
+  const [epsShown, setEpsShown] = useState<{ key: string; n: number }>({ key: '', n: 20 });
 const [failNote, setFailNote] = useState('');
 const [showParty, setShowParty] = useState(!!partyCodeParam);
 const [fsFull, setFsFull] = useState(false);
@@ -63,6 +80,10 @@ const [fsFull, setFsFull] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
   const partyNavRef = useRef(false);
   const autoJoinTried = useRef(false);
+  // Latest season/episode for TMDB matching without re-triggering the
+  // recs/picker effects on every episode hop. Runs before those effects.
+  const epCtxRef = useRef({ season, episode });
+  useEffect(() => { epCtxRef.current = { season, episode }; });
   const reqKey = `${type}|${id}|${season}|${episode}|${expectedTitle}|${pick(params.language) || ''}|${netmirror}|${attempt}`;
 
   const language = pick(params.language) || '';
@@ -133,8 +154,7 @@ const [fsFull, setFsFull] = useState(false);
         const q = expectedTitle || data?.title || '';
         if (!q) return;
         const results = await api.search(q);
-        const match = (results || []).find((r: any) => !r.isNetMirror && (r.media_type || (r.isTV ? 'tv' : 'movie')) === type)
-          || (results || []).find((r: any) => !r.isNetMirror);
+        const match = await pickTmdbMatch(results, type, q, epCtxRef.current.season, epCtxRef.current.episode);
         if (!match) return;
         const r = await api.recs(match.media_type || type, match.id);
         if (alive) setRecs((r || []).filter((x: any) => x && x.id && (x.poster_path || x.backdrop_path)).slice(0, 18));
@@ -144,13 +164,57 @@ const [fsFull, setFsFull] = useState(false);
   }, [id, type, isNetMirrorId, expectedTitle, data?.title]);
 
   // Dub/language alternatives for this exact work (NetMirror catalog variants).
+  // Try the stream's resolved title first, then the title we navigated with —
+  // either can match a different set of catalog variants.
   useEffect(() => {
     const q = data?.title || expectedTitle;
     if (!q) return;
     let alive = true;
-    api.languages(q).then((l) => { if (alive) setDubs(Array.isArray(l) ? l : []); }).catch(() => {});
+    (async () => {
+      let l = await api.languages(q).catch(() => []);
+      if (alive && (!Array.isArray(l) || !l.length) && expectedTitle && expectedTitle !== q) {
+        l = await api.languages(expectedTitle).catch(() => []);
+      }
+      if (alive) setDubs(Array.isArray(l) ? l : []);
+    })();
     return () => { alive = false; };
   }, [data?.title, expectedTitle]);
+
+  // Episode picker data: NetMirror ids are not TMDB ids, so map to the closest
+  // TMDB match by title first (same pattern as More Like This).
+  useEffect(() => {
+    if (!isTV || !isNetMirrorId || tmdbId) return;
+    const q = expectedTitle || data?.title || '';
+    if (!q) return;
+    let alive = true;
+    (async () => {
+      try {
+        const results = await api.search(q);
+        const match = await pickTmdbMatch(results, 'tv', q, epCtxRef.current.season, epCtxRef.current.episode);
+        if (alive && match?.id) setTmdbId(String(match.id));
+      } catch { /* picker falls back to Prev/Next only */ }
+    })();
+    return () => { alive = false; };
+  }, [isTV, isNetMirrorId, tmdbId, expectedTitle, data?.title]);
+
+  useEffect(() => {
+    if (!isTV || !tmdbId) return;
+    let alive = true;
+    api.seasons(String(tmdbId))
+      .then((s) => { if (alive) setTvSeasons((Array.isArray(s) ? s : []).filter((x: any) => x && x.season_number > 0)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isTV, tmdbId]);
+
+  useEffect(() => {
+    if (!isTV || !tmdbId) return;
+    let alive = true;
+    const key = `${tmdbId}|${pickSeason}`;
+    api.episodes(String(tmdbId), pickSeason)
+      .then((e) => { if (alive) { setTvEps(Array.isArray(e) ? e : []); setEpsFor(key); } })
+      .catch(() => { if (alive) { setTvEps([]); setEpsFor(key); } });
+    return () => { alive = false; };
+  }, [isTV, tmdbId, pickSeason]);
 
   // Live CDN config (allowlisted Referer) — refreshed server-side by the
   // in-process monitor; fetched here so a NetMirror rotation needs no app update.
@@ -278,6 +342,9 @@ const [fsFull, setFsFull] = useState(false);
   if (error && errorFor === reqKey) {
     return (
       <View style={[styles.center, { backgroundColor: t.bg }]}>
+        <Pressable onPress={backOrHome} hitSlop={12} style={[styles.floatBack, { top: insets.top + 8 }]}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </Pressable>
         <Text style={[styles.errTitle, { color: t.text }]}>Stream unavailable</Text>
         <Text style={[styles.error, { color: t.muted }]}>{friendlyError(error)}</Text>
         <Pressable onPress={() => setAttempt((a) => a + 1)} style={[styles.retry, { backgroundColor: t.accent }]}>
@@ -289,6 +356,9 @@ const [fsFull, setFsFull] = useState(false);
   if (!data || dataFor !== reqKey) {
     return (
       <View style={[styles.center, { backgroundColor: t.bg }]}>
+        <Pressable onPress={backOrHome} hitSlop={12} style={[styles.floatBack, { top: insets.top + 8 }]}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </Pressable>
         <ActivityIndicator color={t.accent} size="large" />
         <Text style={[styles.loading, { color: t.secondary }]}>Resolving stream…</Text>
         {!!(data?.title || expectedTitle) && <Text style={[styles.loadingSub, { color: t.muted }]}>{data?.title || expectedTitle}</Text>}
@@ -321,9 +391,20 @@ const [fsFull, setFsFull] = useState(false);
     } catch { return true; }
   });
   const curLang = String(data.language || language || '').toLowerCase();
-  const altDubs = dubs.filter((d: any) => { const dl = String(d?.language || '').toLowerCase(); return dl && dl !== curLang; }).slice(0, 12);
+  const seenLang = new Set<string>();
+  const langList: { language: string }[] = [
+    ...(curLang ? [{ language: curLang }] : []),
+    ...dubs,
+  ]
+    .map((d: any) => ({ language: String(d?.language || '').trim() }))
+    .filter((d) => { const l = d.language.toLowerCase(); if (!l || seenLang.has(l)) return false; seenLang.add(l); return true; })
+    .slice(0, 14);
   const qualities = direct.map((s: any, i: number) => ({ label: s.quality || 'Auto', active: i === active }));
   const subsList: { label?: string; url: string }[] = (Array.isArray(data?.subtitles) ? data.subtitles : []).filter((s: any) => s && typeof s.url === 'string' && s.url);
+  const epsKey = `${tmdbId}|${pickSeason}`;
+  const epsLoading = isTV && !!tmdbId && epsFor !== epsKey;
+  const shownN = epsShown.key === epsKey ? epsShown.n : 20;
+  const epsVisible = tvEps.slice(0, shownN);
 
   // Playback failover for the NetMirror CDN path: signed CDN URLs stall or
   // expire mid-watch. Try the next source, then re-resolve fresh (server
@@ -345,7 +426,7 @@ const [fsFull, setFsFull] = useState(false);
 
   return (
     <View style={[styles.screen, { backgroundColor: t.bg }]}>
-      <View style={[styles.videoWrap, fsFull && styles.videoWrapFull]}>
+      <View style={[styles.videoWrap, fsFull && styles.videoWrapFull, showParty && !fsFull && styles.videoWrapParty]}>
         {ext && extFor === reqKey ? (
           <WebView source={{ uri: ext.url }} style={styles.videoFill} allowsFullscreenVideo allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
         ) : direct.length ? (
@@ -370,6 +451,13 @@ const [fsFull, setFsFull] = useState(false);
             onSeekEvent={onSeekEvent}
             nextLabel={isTV ? `S${season} E${episode + 1}` : undefined}
             onNext={isTV ? () => goEp(season, episode + 1) : undefined}
+            tvSeasons={isTV ? tvSeasons : undefined}
+            tvEpisodes={isTV ? tvEps : undefined}
+            tvSeason={pickSeason}
+            curSeason={season}
+            curEpisode={episode}
+            onPickSeason={setPickSeason}
+            onPickEpisode={isTV ? goEp : undefined}
           />
         ) : (
           <View style={[styles.videoFill, styles.center, { backgroundColor: '#000' }]}>
@@ -384,53 +472,106 @@ const [fsFull, setFsFull] = useState(false);
           </View>
         )}
       </View>
+      {!fsFull && (!direct.length || !!ext) && (
+        <Pressable onPress={backOrHome} hitSlop={12} style={[styles.floatBack, { top: insets.top + 8 }]}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </Pressable>
+      )}
       {failNote ? <Text style={[styles.loadingSub, { color: t.muted, textAlign: 'center', paddingTop: 6 }]}>{failNote}</Text> : null}
       <ScrollView style={styles.meta} contentContainerStyle={{ paddingBottom: 28 }}>
         <Text style={[styles.title, { color: t.text }]} numberOfLines={2}>{title}</Text>
         {!!(data.language || language) && <Text style={[styles.sub, { color: t.accent }]}>{String(data.language || language).toUpperCase()}</Text>}
         <View style={styles.row}>
-          <Pressable onPress={() => setExt(null)} style={[styles.chip, !ext && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-            <Text style={[styles.chipText, { color: !ext ? t.accent : t.secondary }]}>NetMirror</Text>
+          <Pressable onPress={() => setExt(null)} style={[styles.tab, !ext && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
+            <Text style={[styles.tabText, { color: !ext ? t.text : t.secondary }]}>NetMirror</Text>
           </Pressable>
           {embedList.map((s) => (
-            <Pressable key={s.key} onPress={() => setExt(s)} style={[styles.chip, ext?.key === s.key && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-              <Text style={[styles.chipText, { color: ext?.key === s.key ? t.accent : t.secondary }]}>{s.label}</Text>
+            <Pressable key={s.key} onPress={() => setExt(s)} style={[styles.tab, ext?.key === s.key && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
+              <Text style={[styles.tabText, { color: ext?.key === s.key ? t.text : t.secondary }]}>{s.label}</Text>
             </Pressable>
           ))}
         </View>
         {direct.length > 1 && !ext && (
           <View style={styles.row}>
             {direct.map((s: any, i: number) => (
-              <Pressable key={i} onPress={() => setActive(i)} style={[styles.chip, i === active && { borderColor: t.accent, backgroundColor: t.accentSoft }]}>
-                <Text style={[styles.chipText, { color: i === active ? t.accent : t.secondary }]}>{s.quality || 'Auto'}</Text>
+              <Pressable key={i} onPress={() => setActive(i)} style={[styles.tab, i === active && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
+                <Text style={[styles.tabText, { color: i === active ? t.text : t.secondary }]}>{s.quality || 'Auto'}</Text>
               </Pressable>
             ))}
           </View>
         )}
         {isTV && (
           <View style={styles.row}>
-            <Pressable onPress={() => episode > 1 && goEp(season, episode - 1)} disabled={episode <= 1} style={[styles.chip, episode <= 1 && { opacity: 0.35 }]}>
-              <Text style={[styles.chipText, { color: t.secondary }]}>‹ Prev</Text>
+            <Pressable onPress={() => episode > 1 && goEp(season, episode - 1)} disabled={episode <= 1} style={styles.tab}>
+              <Text style={[styles.tabText, { color: t.secondary, opacity: episode <= 1 ? 0.35 : 1 }]}>‹ Prev</Text>
             </Pressable>
-            <View style={[styles.chip, { borderColor: t.border }]}>
-              <Text style={[styles.chipText, { color: t.text }]}>S{season} E{episode}</Text>
-            </View>
-            <Pressable onPress={() => goEp(season, episode + 1)} style={styles.chip}>
-              <Text style={[styles.chipText, { color: t.secondary }]}>Next ›</Text>
+            <Pressable onPress={() => { setPickSeason(season); setShowEpsList(true); }} style={styles.tab}>
+              <Text style={[styles.tabText, { color: t.accent }]}>S{season} E{episode} ▾</Text>
             </Pressable>
-            <Pressable onPress={() => goEp(season + 1, 1)} style={styles.chip}>
-              <Text style={[styles.chipText, { color: t.secondary }]}>S{season + 1} ▸</Text>
+            <Pressable onPress={() => goEp(season, episode + 1)} style={styles.tab}>
+              <Text style={[styles.tabText, { color: t.secondary }]}>Next ›</Text>
             </Pressable>
           </View>
         )}
-        {altDubs.length > 0 && (
+        {langList.length > 0 && (
           <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: t.muted }]}>Languages</Text>
-            {altDubs.map((d: any, i: number) => (
-              <Pressable key={`${d?.id ?? d?.language ?? i}`} onPress={() => goLang(d.language)} style={styles.chip}>
-                <Text style={[styles.chipText, { color: t.secondary }]}>{String(d.language || 'dub').toUpperCase()}</Text>
-              </Pressable>
-            ))}
+            <Text style={[styles.rowLabel, { color: t.muted }]}>Audio</Text>
+            {langList.map((d, i) => {
+              const on = d.language.toLowerCase() === curLang;
+              return (
+                <Pressable key={`${d.language}-${i}`} onPress={() => { if (!on) goLang(d.language); }} disabled={on} style={[styles.tab, on && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
+                  <Text style={[styles.tabText, { color: on ? t.accent : t.secondary }]}>{d.language.toUpperCase()}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {isTV && (tvSeasons.length > 0 || tvEps.length > 0) && (
+          <View style={{ marginTop: 18 }}>
+            <Pressable onPress={() => setEpsOpen((o) => !o)} hitSlop={8} style={styles.epsHead}>
+              <Text style={[styles.recTitle, { color: t.text, marginBottom: 0 }]}>
+                Episodes{!epsLoading && tvEps.length ? ` · ${tvEps.length} in S${pickSeason}` : ''}
+              </Text>
+              <Ionicons name={epsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={t.muted} />
+            </Pressable>
+            {epsOpen && (
+              <>
+                {tvSeasons.length > 1 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                    <View style={{ flexDirection: 'row' }}>
+                      {tvSeasons.map((s: any) => {
+                        const on = pickSeason === s.season_number;
+                        return (
+                          <Pressable key={s.season_number} onPress={() => setPickSeason(s.season_number)} style={[styles.tab, on && { borderBottomWidth: 2, borderBottomColor: t.accent }]}>
+                            <Text style={[styles.tabText, { color: on ? t.text : t.secondary }]}>S{s.season_number}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                )}
+                {epsLoading && !tvEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>Loading episodes…</Text>}
+                {!epsLoading && !tvEps.length && <Text style={[styles.epsNote, { color: t.muted }]}>No episodes listed for this season.</Text>}
+                {(epsLoading ? [] : epsVisible).map((ep: any) => {
+                  const isCur = season === pickSeason && episode === ep.episode_number;
+                  return (
+                    <Pressable key={ep.id ?? `e${ep.episode_number}`} onPress={() => goEp(pickSeason, ep.episode_number)} style={styles.epRowN}>
+                      <Text style={[styles.epNum, { color: isCur ? t.accent : t.muted }]}>{ep.episode_number}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.epName, { color: isCur ? t.accent : t.text }]} numberOfLines={2}>{ep.name || `Episode ${ep.episode_number}`}</Text>
+                        {!!ep.air_date && <Text style={[styles.epDate, { color: t.muted }]}>{ep.air_date}</Text>}
+                      </View>
+                      {isCur && <Text style={[styles.epNow, { color: t.accent }]}>PLAYING</Text>}
+                    </Pressable>
+                  );
+                })}
+                {!epsLoading && tvEps.length > shownN && (
+                  <Pressable onPress={() => setEpsShown({ key: epsKey, n: shownN + 24 })} style={styles.showMore}>
+                    <Text style={[styles.showMoreText, { color: t.accent }]}>Show more · {tvEps.length - shownN} left</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
           </View>
         )}
         {recs.length > 0 && (
@@ -446,6 +587,21 @@ const [fsFull, setFsFull] = useState(false);
           </View>
         )}
       </ScrollView>
+      {isTV && (
+        <EpisodesPicker
+          visible={showEpsList}
+          onClose={() => setShowEpsList(false)}
+          padTop={insets.top + 52}
+          t={t}
+          seasons={tvSeasons}
+          episodes={tvEps}
+          tvSeason={pickSeason}
+          curSeason={season}
+          curEpisode={episode}
+          onPickSeason={setPickSeason}
+          onPickEpisode={goEp}
+        />
+      )}
       <WatchPartySheet
         visible={showParty}
         onClose={() => setShowParty(false)}
@@ -529,6 +685,13 @@ type PlayerProps = {
   onNext?: () => void;
   fullscreen?: boolean;
   onFsChange?: (v: boolean) => void;
+  tvSeasons?: any[];
+  tvEpisodes?: any[];
+  tvSeason?: number;
+  curSeason?: number;
+  curEpisode?: number;
+  onPickSeason?: (s: number) => void;
+  onPickEpisode?: (s: number, e: number) => void;
 };
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -551,9 +714,13 @@ function Player({
   ref, src, onFail, autoRecover, title, subtitle, insetTop, inParty, isPartyHost,
   onOpenParty, qualities, subs, onSelectQuality, onPlayPauseEvent, onSeekEvent, nextLabel, onNext,
   fullscreen = false, onFsChange,
+  tvSeasons, tvEpisodes, tvSeason, curSeason, curEpisode, onPickSeason, onPickEpisode,
 }: PlayerProps) {
-  const { t } = usePrefs();
-  const insets = useSafeAreaInsets();
+  const { t, prefs } = usePrefs();
+  // Landscape (our custom fullscreen) gets the full transport; portrait stays
+  // minimal — top bar + scrub + one button row, no center overlay to collide.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const wide = winW > winH;
   const player = useVideoPlayer({ uri: src, contentType: contentTypeFor(src), headers: headersFor(src) } as any, (p) => {
     p.loop = false;
     p.timeUpdateEventInterval = 0.25;
@@ -564,6 +731,11 @@ function Player({
     p.seekTolerance = { toleranceBefore: 1, toleranceAfter: 1 };
     p.play();
   });
+  // Background playback is a player property, not a source option — apply it
+  // live from prefs (the Settings toggle) without recreating the player.
+  useEffect(() => {
+    try { player.staysActiveInBackground = !!prefs.bgPlay; } catch {}
+  }, [player, prefs.bgPlay]);
   const { status, error } = useEvent(player, 'statusChange', { status: player.status });
   const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
   const [pos, setPos] = useState(0);
@@ -574,6 +746,10 @@ function Player({
   const [showSettings, setShowSettings] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState(0);
+  const [showEps, setShowEps] = useState(false);
+  // ExoPlayer reports the pre-seek position for a few ticks after a seek; hold
+  // the bar on the requested target until the engine catches up.
+  const seekStampRef = useRef<{ target: number; until: number } | null>(null);
   const [tracks, setTracks] = useState<any[]>([]);
   const [activeTrack, setActiveTrack] = useState<any>(null);
   const [seekHint, setSeekHint] = useState<number | null>(null);
@@ -664,11 +840,17 @@ function Player({
   };
 
   useEventListener(player, 'timeUpdate', useCallback((p: any) => {
-    if (!scrubbing) setPos(p?.currentTime ?? 0);
+    const t = p?.currentTime ?? 0;
+    const stamp = seekStampRef.current;
+    if (stamp) {
+      if (Math.abs(t - stamp.target) <= 2.5 || Date.now() >= stamp.until) seekStampRef.current = null;
+    } else if (!scrubbing) {
+      setPos(t);
+    }
     if (typeof p?.bufferedPosition === 'number' && p.bufferedPosition >= 0) setBuffered(p.bufferedPosition);
     const d = player.duration;
     if (d && d > 0 && d !== dur) setDur(d);
-    if (nextCancelled && d - (p?.currentTime ?? 0) > 46) setNextCancelled(false);
+    if (nextCancelled && d - t > 46) setNextCancelled(false);
   }, [scrubbing, dur, player, nextCancelled]));
 
   useEventListener(player, 'playToEnd', useCallback(() => {
@@ -715,6 +897,7 @@ function Player({
   const seekTo = useCallback((time: number) => {
     const d = player.duration || 0;
     const clamped = Math.max(0, d > 0 ? Math.min(d - 0.5, time) : time);
+    seekStampRef.current = { target: clamped, until: Date.now() + 1200 };
     player.currentTime = clamped;
     setPos(clamped);
     onSeekEvent(clamped);
@@ -754,25 +937,39 @@ function Player({
     setShowSettings(true);
   };
 
+  const startPip = () => {
+    try { videoViewRef.current?.startPictureInPicture(); } catch { setPipNote(true); setTimeout(() => setPipNote(false), 3000); }
+  };
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (evt) => {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        setControls(true);
         setScrubbing(true);
-        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / trackWRef.current));
-        setScrubTime(ratio * (playerRef.current?.duration || 0));
+        const d = playerRef.current?.duration || 0;
+        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
+        setScrubTime(ratio * d);
       },
       onPanResponderMove: (evt) => {
-        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / trackWRef.current));
-        setScrubTime(ratio * (playerRef.current?.duration || 0));
+        const d = playerRef.current?.duration || 0;
+        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
+        setScrubTime(ratio * d);
       },
       onPanResponderRelease: (evt) => {
-        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / trackWRef.current));
-        const target = ratio * (playerRef.current?.duration || 0);
+        const d = playerRef.current?.duration || 0;
         setScrubbing(false);
-        seekToRef.current(target);
+        pokeRef.current();
+        if (d <= 0) return;
+        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
+        seekToRef.current(ratio * d);
       },
+      // Android can cancel the gesture (modal/sheet steal) — never leave the
+      // bar in scrubbing state, or playback position freezes.
+      onPanResponderTerminate: () => setScrubbing(false),
     }),
   ).current;
   const trackWRef = useRef(1);
@@ -780,6 +977,8 @@ function Player({
   playerRef.current = player;
   const seekToRef = useRef(seekTo);
   seekToRef.current = seekTo;
+  const pokeRef = useRef(pokeControls);
+  pokeRef.current = pokeControls;
 
   const handleTap = (delta: number) => {
     const now = Date.now();
@@ -831,13 +1030,13 @@ function Player({
       )}
 
       {subLine ? (
-        <View style={[styles.subOverlay, { bottom: subStyle.position + (fullscreen ? 78 : 0) }]} pointerEvents="none">
+        <View style={[styles.subOverlay, { bottom: subStyle.position + (fullscreen ? 80 : controls ? 66 : 0) }]} pointerEvents="none">
           <Text style={[styles.subText, { fontSize: subStyle.size, color: subStyle.color }]}>{subLine}</Text>
         </View>
       ) : null}
 
       {!!onNext && dur > 0 && dur - pos > 3 && dur - pos <= 45 && !nextCancelled && (
-        <View style={[styles.nextChip, { bottom: fullscreen ? 140 : 62 }]}>
+        <View style={[styles.nextChip, { bottom: fullscreen ? 140 : 92 }]}>
           <Text style={styles.nextChipText}>Next episode in {Math.ceil(dur - pos)}s</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
             <Pressable onPress={onNext} style={[styles.nextChipBtn, { backgroundColor: t.accent }]}>
@@ -862,31 +1061,37 @@ function Player({
         <>
           {/* Top bar */}
           <View style={[styles.topBar, { paddingTop: insetTop + 6 }]}>
-            <Pressable onPress={() => { if (fullscreen) onFsChange?.(false); else router.back(); }} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+            <Pressable onPress={() => { if (fullscreen) onFsChange?.(false); else backOrHome(); }} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </Pressable>
             <View style={{ flex: 1 }}>
               <Text style={styles.topTitle} numberOfLines={1}>{title}</Text>
               {!!subtitle && <Text style={styles.topSub} numberOfLines={1}>{subtitle}</Text>}
             </View>
+            {!!onPickEpisode && (
+              <Pressable onPress={() => { onPickSeason?.(curSeason || 1); setShowEps(true); }} hitSlop={10} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+                <Ionicons name="list" size={20} color="#e5e7eb" />
+              </Pressable>
+            )}
             {qualities.length > 0 && (
               <Pressable onPress={openSettings} hitSlop={10} style={({ pressed }) => [styles.qualBadge, pressed && { opacity: 0.7 }]}>
                 <Text style={styles.qualBadgeText} numberOfLines={1}>{qualities.find((q) => q.active)?.label || 'Auto'}</Text>
               </Pressable>
             )}
-            <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, inParty && styles.iconBtnActive, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+            <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, inParty && { backgroundColor: t.accentSoft }, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
               <Ionicons name="people" size={19} color={inParty ? '#fff' : '#e5e7eb'} />
               {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
             </Pressable>
           </View>
 
-          {/* Center transport */}
+          {/* Center transport — landscape only; portrait keeps the video area clear */}
+          {wide && (
           <View style={styles.centerRow}>
             <Pressable onPress={() => skip(-10)} style={styles.sideBtn} hitSlop={8}>
               <Ionicons name="play-back" size={26} color="#fff" />
               <Text style={styles.sideBtnText}>10</Text>
             </Pressable>
-            <Pressable onPress={() => { if (player.playing) player.pause(); else player.play(); pokeControls(); }} style={styles.playBtn}>
+            <Pressable onPress={() => { if (player.playing) player.pause(); else player.play(); pokeControls(); }} style={[styles.playBtn, { backgroundColor: t.accent }]}>
               <Ionicons name={isPlaying ? 'pause' : 'play'} size={30} color="#fff" style={!isPlaying ? { marginLeft: 3 } : undefined} />
             </Pressable>
             <Pressable onPress={() => skip(10)} style={styles.sideBtn} hitSlop={8}>
@@ -900,6 +1105,7 @@ function Player({
               </Pressable>
             )}
           </View>
+          )}
 
           {/* Bottom bar */}
           <View style={styles.bottomBar}>
@@ -911,29 +1117,57 @@ function Player({
                 {...pan.panHandlers}
               >
                 <View style={[styles.trackBuffered, { width: `${bufferRatio * 100}%` }]} />
-                <View style={[styles.trackPlayed, { width: `${progress * 100}%` }]} />
+                <View style={[styles.trackPlayed, { width: `${progress * 100}%`, backgroundColor: t.accent }]} />
                 <View style={[styles.trackThumb, { left: `${progress * 100}%` }]} />
               </View>
               <Text style={styles.timeText}>{fmtTime(dur)}</Text>
             </View>
             <View style={styles.btnRow}>
-              <Pressable onPress={() => setRate(speed === 1 ? 1.5 : speed === 1.5 ? 2 : speed === 2 ? 0.5 : 1)} style={({ pressed }) => [styles.textBtn, pressed && { opacity: 0.6 }]} hitSlop={12}>
-                <Text style={styles.textBtnLabel}>{speed}x</Text>
-              </Pressable>
-              <View style={{ flex: 1 }} />
-              <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
-                <Ionicons name={inParty ? 'people' : 'people-outline'} size={20} color={inParty ? t.accent : '#fff'} />
-                {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
-              </Pressable>
-              <Pressable onPress={openSettings} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
-                <Ionicons name="settings-outline" size={20} color="#fff" />
-              </Pressable>
-              <Pressable onPress={() => { try { videoViewRef.current?.startPictureInPicture(); } catch { setPipNote(true); setTimeout(() => setPipNote(false), 3000); } }} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]} hitSlop={12}>
-                <Ionicons name="browsers-outline" size={20} color="#fff" />
-              </Pressable>
-              <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={12}>
-                <Ionicons name={fullscreen ? 'contract' : 'expand'} size={22} color="#fff" />
-              </Pressable>
+              {wide ? (
+                <>
+                  <Pressable onPress={() => setRate(speed === 1 ? 1.5 : speed === 1.5 ? 2 : speed === 2 ? 0.5 : 1)} style={({ pressed }) => [styles.textBtn, pressed && { opacity: 0.6 }]} hitSlop={12}>
+                    <Text style={styles.textBtnLabel}>{speed}x</Text>
+                  </Pressable>
+                  <View style={{ flex: 1 }} />
+                  <Pressable onPress={onOpenParty} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+                    <Ionicons name={inParty ? 'people' : 'people-outline'} size={20} color={inParty ? t.accent : '#fff'} />
+                    {inParty && <View style={[styles.hostDot, { backgroundColor: isPartyHost ? '#f59e0b' : '#22c55e' }]} />}
+                  </Pressable>
+                  <Pressable onPress={openSettings} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+                    <Ionicons name="settings-outline" size={20} color="#fff" />
+                  </Pressable>
+                  <Pressable onPress={startPip} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]} hitSlop={12}>
+                    <Ionicons name="browsers-outline" size={20} color="#fff" />
+                  </Pressable>
+                  <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={12}>
+                    <Ionicons name={fullscreen ? 'contract' : 'expand'} size={22} color="#fff" />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable onPress={() => skip(-10)} style={styles.sideBtn} hitSlop={8}>
+                    <Ionicons name="play-back" size={22} color="#fff" />
+                  </Pressable>
+                  <Pressable onPress={() => { if (player.playing) player.pause(); else player.play(); pokeControls(); }} style={[styles.playBtnMini, { backgroundColor: t.accent }]} hitSlop={8}>
+                    <Ionicons name={isPlaying ? 'pause' : 'play'} size={20} color="#fff" style={!isPlaying ? { marginLeft: 2 } : undefined} />
+                  </Pressable>
+                  <Pressable onPress={() => skip(10)} style={styles.sideBtn} hitSlop={8}>
+                    <Ionicons name="play-forward" size={22} color="#fff" />
+                  </Pressable>
+                  {!!onNext && (
+                    <Pressable onPress={onNext} style={styles.sideBtn} hitSlop={8}>
+                      <Ionicons name="play-skip-forward" size={20} color="#fff" />
+                    </Pressable>
+                  )}
+                  <View style={{ flex: 1 }} />
+                  <Pressable onPress={openSettings} hitSlop={12} style={({ pressed }) => [styles.iconBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
+                    <Ionicons name="settings-outline" size={20} color="#fff" />
+                  </Pressable>
+                  <Pressable onPress={() => onFsChange?.(!fullscreen)} style={styles.iconBtn} hitSlop={12}>
+                    <Ionicons name="expand" size={22} color="#fff" />
+                  </Pressable>
+                </>
+              )}
             </View>
           </View>
         </>
@@ -942,11 +1176,11 @@ function Player({
       {/* Player settings — compact popover like the web player: quality,
           speed, subtitle track/styling, watch party. */}
       <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
-        <View style={styles.modalWrap}>
+        <View style={[styles.modalWrap, { paddingTop: insetTop + 52 }]}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)} />
-        <View style={[styles.settingsPop, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border, top: insetTop + 76 }]}>
+        <View style={[styles.sheet, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border }]}>
           <Text style={[styles.sheetTitle, { color: t.text }]}>Player</Text>
-          <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
             {qualities.length > 1 && (
               <>
                 <Text style={[styles.sheetSection, { color: t.muted }]}>QUALITY</Text>
@@ -985,12 +1219,12 @@ function Player({
                     <Text style={[styles.sheetSection, { color: t.muted }]}>TEXT COLOR</Text>
                     <View style={styles.optionWrap}>
                       {SUB_COLORS.map((c) => (
-                        <Pressable key={c.value} onPress={() => patchSubStyle({ color: c.value })} accessibilityLabel={c.label} style={[styles.colorDot, { backgroundColor: c.value }, subStyle.color === c.value && styles.colorDotActive]} />
+                        <Pressable key={c.value} onPress={() => patchSubStyle({ color: c.value })} accessibilityLabel={c.label} style={[styles.colorDot, { backgroundColor: c.value }, subStyle.color === c.value && { borderColor: t.accent, borderWidth: 3 }]} />
                       ))}
                     </View>
-                    <SliderBar label="TEXT SIZE" value={subStyle.size} min={SUB_RANGES.size.min} max={SUB_RANGES.size.max} step={SUB_RANGES.size.step} display={`${Math.round(subStyle.size)} px`} onChange={(n) => patchSubStyle({ size: n })} />
-                    <SliderBar label="POSITION" value={subStyle.position} min={SUB_RANGES.position.min} max={SUB_RANGES.position.max} step={SUB_RANGES.position.step} display={`${Math.round(subStyle.position)} px`} onChange={(n) => patchSubStyle({ position: n })} />
-                    <SliderBar label="SYNC" value={subStyle.sync} min={SUB_RANGES.sync.min} max={SUB_RANGES.sync.max} step={SUB_RANGES.sync.step} display={`${subStyle.sync > 0 ? '+' : ''}${subStyle.sync.toFixed(1)}s`} onChange={(n) => patchSubStyle({ sync: n })} />
+                    <SliderBar label="TEXT SIZE" value={subStyle.size} min={SUB_RANGES.size.min} max={SUB_RANGES.size.max} step={SUB_RANGES.size.step} display={`${Math.round(subStyle.size)} px`} accent={t.accent} onChange={(n) => patchSubStyle({ size: n })} />
+                    <SliderBar label="POSITION" value={subStyle.position} min={SUB_RANGES.position.min} max={SUB_RANGES.position.max} step={SUB_RANGES.position.step} display={`${Math.round(subStyle.position)} px`} accent={t.accent} onChange={(n) => patchSubStyle({ position: n })} />
+                    <SliderBar label="SYNC" value={subStyle.sync} min={SUB_RANGES.sync.min} max={SUB_RANGES.sync.max} step={SUB_RANGES.sync.step} display={`${subStyle.sync > 0 ? '+' : ''}${subStyle.sync.toFixed(1)}s`} accent={t.accent} onChange={(n) => patchSubStyle({ sync: n })} />
                   </>
                 )}
               </>
@@ -1015,6 +1249,13 @@ function Player({
               <Text style={[styles.sheetNote, { color: t.muted }]}>Subtitles appear here when the stream ships them.</Text>
             )}
 
+            <Text style={[styles.sheetSection, { color: t.muted }]}>PLAYBACK</Text>
+            <Pressable onPress={() => { setShowSettings(false); startPip(); }} style={styles.optionRow}>
+              <Ionicons name="browsers-outline" size={18} color={t.text} style={{ marginRight: 10 }} />
+              <Text style={[styles.optionText, { color: t.text, flex: 1 }]}>Picture-in-picture</Text>
+              <Ionicons name="open-outline" size={15} color={t.muted} />
+            </Pressable>
+
             <Text style={[styles.sheetSection, { color: t.muted }]}>WATCH PARTY</Text>
             <Pressable onPress={() => { setShowSettings(false); onOpenParty(); }} style={styles.optionRow}>
               <Ionicons name="people-outline" size={18} color={inParty ? t.accent : t.text} style={{ marginRight: 10 }} />
@@ -1025,14 +1266,109 @@ function Player({
         </View>
         </View>
       </Modal>
+
+      <EpisodesPicker
+        visible={showEps}
+        onClose={() => setShowEps(false)}
+        padTop={insetTop + 52}
+        t={t}
+        seasons={tvSeasons}
+        episodes={tvEpisodes}
+        tvSeason={tvSeason}
+        curSeason={curSeason}
+        curEpisode={curEpisode}
+        onPickSeason={onPickSeason}
+        onPickEpisode={onPickEpisode}
+      />
     </View>
+  );
+}
+
+// Episode picker — jump straight to any season/episode instead of chaining
+// Next through a whole season. Shared by the player overlay and the screen.
+// Season dropdown + search keep long anime runs navigable without scrolling.
+function EpisodesPicker({ visible, onClose, padTop, t, seasons, episodes, tvSeason, curSeason, curEpisode, onPickSeason, onPickEpisode }: {
+  visible: boolean; onClose: () => void; padTop?: number; t: any;
+  seasons?: any[]; episodes?: any[]; tvSeason?: number; curSeason?: number; curEpisode?: number;
+  onPickSeason?: (s: number) => void; onPickEpisode?: (s: number, e: number) => void;
+}) {
+  const sid = tvSeason || 1;
+  const [filter, setFilter] = useState('');
+  const [seasonOpen, setSeasonOpen] = useState(false);
+  const close = () => { setFilter(''); setSeasonOpen(false); onClose(); };
+  const f = filter.trim().toLowerCase();
+  const list = (episodes || []).filter((ep: any) => !f
+    || String(ep?.episode_number) === f
+    || String(ep?.episode_number || '').startsWith(f)
+    || String(ep?.name || '').toLowerCase().includes(f));
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+      <View style={[styles.modalWrap, { paddingTop: padTop ?? 60 }]}>
+        <Pressable style={styles.modalBackdrop} onPress={close} />
+        <View style={[styles.sheet, { backgroundColor: 'rgba(9,9,14,0.98)', borderColor: t.border }]}>
+          <Text style={[styles.sheetTitle, { color: t.text }]}>Episodes</Text>
+          <View style={styles.pickerHead}>
+            {(seasons?.length || 0) > 1 ? (
+              <Pressable onPress={() => setSeasonOpen((o) => !o)} style={[styles.seasonBtn, { borderColor: seasonOpen ? t.accent : t.border }]}>
+                <Text style={{ color: t.text, fontSize: 13, fontWeight: '800' }}>Season {sid}</Text>
+                <Ionicons name={seasonOpen ? 'chevron-up' : 'chevron-down'} size={14} color={t.muted} />
+              </Pressable>
+            ) : <View style={{ flex: 1 }} />}
+            <View style={[styles.searchBox, { borderColor: t.border }]}>
+              <Ionicons name="search" size={14} color={t.muted} />
+              <TextInput
+                value={filter}
+                onChangeText={setFilter}
+                placeholder="Search episodes"
+                placeholderTextColor={t.muted}
+                autoCorrect={false}
+                style={[styles.searchInput, { color: t.text }]}
+              />
+              {!!filter && <Pressable onPress={() => setFilter('')} hitSlop={8}><Ionicons name="close-circle" size={15} color={t.muted} /></Pressable>}
+            </View>
+          </View>
+          {seasonOpen && (
+            <ScrollView style={{ maxHeight: 168, marginBottom: 4 }} showsVerticalScrollIndicator={false}>
+              {(seasons || []).map((s: any) => {
+                const on = sid === s.season_number;
+                return (
+                  <Pressable key={s.season_number} onPress={() => { setSeasonOpen(false); onPickSeason?.(s.season_number); }} style={styles.optionRow}>
+                    <Text style={[styles.optionText, { color: on ? t.accent : t.text, flex: 1 }]}>
+                      Season {s.season_number}{s.episode_count ? ` · ${s.episode_count} eps` : ''}
+                    </Text>
+                    {on && <Ionicons name="checkmark" size={16} color={t.accent} />}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+          {!(episodes?.length) && <Text style={[styles.sheetNote, { color: t.muted }]}>Fetching episode list…</Text>}
+          {!!episodes?.length && !list.length && <Text style={[styles.sheetNote, { color: t.muted }]}>No episodes match “{filter.trim()}”.</Text>}
+          <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+            {list.map((ep: any) => {
+              const isCur = curEpisode === ep.episode_number && sid === (curSeason || 1);
+              return (
+                <Pressable key={ep.id ?? `e${ep.episode_number}`} onPress={() => { close(); onPickEpisode?.(sid, ep.episode_number); }} style={styles.epRowN}>
+                  <Text style={[styles.epNum, { color: isCur ? t.accent : t.muted }]}>{ep.episode_number}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.epName, { color: isCur ? t.accent : t.text }]} numberOfLines={2}>{ep.name || `Episode ${ep.episode_number}`}</Text>
+                    {!!ep.air_date && <Text style={[styles.epDate, { color: t.muted }]}>{ep.air_date}</Text>}
+                  </View>
+                  {isCur && <Ionicons name="play" size={14} color={t.accent} />}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
 // Continuous control bar — subtitle size/position/sync are drag bars, not
 // presets, so any caption track can be matched to the picture.
-function SliderBar({ label, value, min, max, step, display, onChange }: {
-  label: string; value: number; min: number; max: number; step?: number; display: string; onChange: (n: number) => void;
+function SliderBar({ label, value, min, max, step, display, accent, onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; display: string; accent: string; onChange: (n: number) => void;
 }) {
   const wRef = useRef(1);
   const setFromX = useCallback((x: number) => {
@@ -1062,7 +1398,7 @@ function SliderBar({ label, value, min, max, step, display, onChange }: {
         {...pan.panHandlers}
       >
         <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)' }}>
-          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratio * 100}%`, borderRadius: 2, backgroundColor: '#a855f7' }} />
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratio * 100}%`, borderRadius: 2, backgroundColor: accent }} />
           <View style={{ position: 'absolute', top: -5, left: `${ratio * 100}%`, width: 14, height: 14, borderRadius: 7, backgroundColor: '#fff', marginLeft: -7 }} />
         </View>
       </View>
@@ -1072,6 +1408,7 @@ function SliderBar({ label, value, min, max, step, display, onChange }: {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },  videoWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
+  videoWrapParty: { width: '50%', borderBottomRightRadius: 0 },
   videoWrapFull: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   videoFill: { width: '100%', height: '100%', backgroundColor: '#000' },
   playerRoot: { flex: 1, position: 'relative' },
@@ -1081,30 +1418,31 @@ const styles = StyleSheet.create({
   seekHint: { position: 'absolute', alignSelf: 'center', top: '44%', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
   seekHintText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   hiccup: { position: 'absolute', bottom: 6, alignSelf: 'center', fontSize: 12, fontWeight: '700' },
-  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingBottom: 6 },
+  floatBack: { position: 'absolute', left: 10, zIndex: 70, width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 6, paddingBottom: 4 },
   topTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
   topSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
-  iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  iconBtnActive: { backgroundColor: 'rgba(168,85,247,0.35)' },
+  iconBtn: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   hostDot: { position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: 4 },
   qualBadge: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'rgba(0,0,0,0.35)', maxWidth: 76 },
   qualBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  nextChip: { position: 'absolute', right: 10, bottom: 62, backgroundColor: 'rgba(9,9,14,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', borderRadius: 14, padding: 12 },
+  nextChip: { position: 'absolute', right: 10, bottom: 92, backgroundColor: 'rgba(9,9,14,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', borderRadius: 14, padding: 12 },
   nextChipText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   nextChipBtn: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 6 },
   nextChipBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  centerRow: { position: 'absolute', top: '38%', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 26 },
-  playBtn: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(168,85,247,0.92)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  sideBtn: { alignItems: 'center', justifyContent: 'center', width: 46, height: 46 },
+  centerRow: { position: 'absolute', top: '34%', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 },
+  playBtn: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+  playBtnMini: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  sideBtn: { alignItems: 'center', justifyContent: 'center', width: 42, height: 42 },
   sideBtnText: { color: 'rgba(255,255,255,0.75)', fontSize: 9, fontWeight: '700', marginTop: 1 },
-  bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10 },
+  bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   timeText: { color: '#e5e7eb', fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] },
   track: { flex: 1, height: 22, justifyContent: 'center' },
   trackBuffered: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.28)', left: 0 },
-  trackPlayed: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: '#a855f7', left: 0 },
+  trackPlayed: { position: 'absolute', height: 4, borderRadius: 2, left: 0 },
   trackThumb: { position: 'absolute', width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', marginLeft: -6 },
-  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
   textBtn: { paddingHorizontal: 8, paddingVertical: 8 },
   textBtnLabel: { color: '#fff', fontSize: 12, fontWeight: '800' },
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
@@ -1112,10 +1450,13 @@ const styles = StyleSheet.create({
   subOverlay: { position: 'absolute', left: 14, right: 14, alignItems: 'center' },
   subText: { textAlign: 'center', fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   colorDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)' },
-  colorDotActive: { borderColor: '#a855f7', borderWidth: 3 },
-  modalWrap: { flex: 1, justifyContent: 'flex-end' },
+  modalWrap: { flex: 1, alignItems: 'flex-end', paddingRight: 10 },
   modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
-  settingsPop: { position: 'absolute', right: 12, width: 268, maxHeight: '70%', borderRadius: 18, borderWidth: 1, padding: 14 },
+  sheet: { width: '92%', maxWidth: 360, maxHeight: '70%', borderRadius: 18, borderWidth: 1, padding: 14 },
+  pickerHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  seasonBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 1, minHeight: 36 },
+  searchInput: { flex: 1, fontSize: 13, paddingVertical: 7 },
   sheetTitle: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
   sheetSection: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 10, marginBottom: 6 },
   sheetNote: { fontSize: 11, marginTop: 10 },
@@ -1133,12 +1474,21 @@ const styles = StyleSheet.create({
   loadingSub: { fontSize: 12, marginTop: 2 },
   retry: { borderRadius: 14, paddingHorizontal: 26, paddingVertical: 12, marginTop: 8 },
   retryText: { fontSize: 15, fontWeight: '700' },
-  meta: { padding: 12, gap: 3 },
+  meta: { paddingHorizontal: 16, paddingTop: 14, gap: 3 },
   title: { fontSize: 17, fontWeight: '800' },
   sub: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
   rowLabel: { width: '100%', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 },
+  tab: { paddingVertical: 6, marginRight: 16 },
+  tabText: { fontSize: 13, fontWeight: '700' },
+  epsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  epsNote: { fontSize: 12, marginTop: 10 },
+  epRowN: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.12)' },
+  epNum: { width: 30, fontSize: 17, fontWeight: '800' },
+  epName: { fontSize: 14, fontWeight: '600' },
+  epDate: { fontSize: 11, marginTop: 2 },
+  epNow: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  showMore: { paddingVertical: 14, alignItems: 'center' },
+  showMoreText: { fontSize: 13, fontWeight: '800' },
   recTitle: { fontSize: 17, fontWeight: '700', marginBottom: 10 },
-  chip: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  chipText: { fontSize: 12, fontWeight: '700' },
 });

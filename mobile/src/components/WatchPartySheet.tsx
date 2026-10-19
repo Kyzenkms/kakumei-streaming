@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { party, PartyMember } from '../party/party';
 import { usePrefs } from '../prefs';
@@ -38,6 +39,7 @@ type Props = {
 
 export function WatchPartySheet(props: Props) {
   const { t } = usePrefs();
+  const insets = useSafeAreaInsets();
   const [inParty, setInParty] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [roomId, setRoomId] = useState('');
@@ -167,10 +169,10 @@ export function WatchPartySheet(props: Props) {
   };
 
   return (
-    <Modal visible={props.visible} transparent animationType="slide" onRequestClose={props.onClose}>
+    <Modal visible={props.visible} transparent animationType="fade" onRequestClose={props.onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.overlay}>
         <Pressable style={s.backdrop} onPress={props.onClose} />
-        <View style={[s.sheet, { backgroundColor: t.bg, borderColor: t.border }]}>
+        <View style={[s.sheet, { backgroundColor: t.bg, borderColor: t.border, paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}>
           <View style={s.header}>
             <Ionicons name="people" size={20} color={t.accent} />
             <Text style={[s.headerTitle, { color: t.text }]}>Watch Party</Text>
@@ -290,14 +292,14 @@ export function WatchPartySheet(props: Props) {
 }
 
 const s = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: 1, maxHeight: '78%', paddingBottom: 22 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 10 },
-  headerTitle: { fontSize: 16, fontWeight: '800' },
-  headerCode: { fontSize: 14, fontWeight: '800', letterSpacing: 2 },
-  body: { paddingHorizontal: 18, paddingTop: 4, gap: 10 },
-  bodyFill: { paddingHorizontal: 14, flexShrink: 1 },
+  sheet: { width: 340, maxWidth: '50%', height: '100%', borderTopLeftRadius: 22, borderBottomLeftRadius: 22, borderWidth: 1, borderRightWidth: 0 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
+  headerTitle: { fontSize: 15, fontWeight: '800' },
+  headerCode: { fontSize: 13, fontWeight: '800', letterSpacing: 2 },
+  body: { paddingHorizontal: 14, paddingTop: 4, gap: 10 },
+  bodyFill: { paddingHorizontal: 12, flex: 1 },
   label: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14 },
   primaryBtn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
@@ -313,13 +315,13 @@ const s = StyleSheet.create({
   membersRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, marginBottom: 4, flexWrap: 'wrap' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   chipText: { fontSize: 11, fontWeight: '700' },
-  chat: { minHeight: 140 },
+  chat: { flex: 1 },
   msgRow: { flexDirection: 'row' },
   bubble: { maxWidth: '82%', borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
   msgSender: { fontSize: 10, fontWeight: '800', marginBottom: 1 },
   msgText: { fontSize: 13 },
   sysMsg: { fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
-  emojiRow: { flexDirection: 'row', gap: 6, paddingVertical: 8, justifyContent: 'center' },
+  emojiRow: { flexDirection: 'row', gap: 4, paddingVertical: 8, flexWrap: 'wrap' },
   emojiBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
   emoji: { fontSize: 16 },
   chatRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },

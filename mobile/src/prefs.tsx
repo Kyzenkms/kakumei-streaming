@@ -7,12 +7,13 @@ export type Prefs = {
   accent: string | null;
   apiBase: string | null; // null = env default
   dub: string; // preferred dub: 'english' | 'hindi' | 'original'
+  bgPlay: boolean; // keep audio playing when the app is backgrounded
 };
 
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL || 'https://stream.kyzenhub.site';
 const KEY = 'kakumei-prefs-v1';
 
-const DEFAULTS: Prefs = { theme: 'midnight', accent: null, apiBase: null, dub: 'english' };
+const DEFAULTS: Prefs = { theme: 'midnight', accent: null, apiBase: null, dub: 'english', bgPlay: false };
 
 type Ctx = { prefs: Prefs; t: Tokens; apiBase: string; set: (p: Partial<Prefs>) => void; ready: boolean };
 const PrefsCtx = createContext<Ctx>({ prefs: DEFAULTS, t: getTokens('midnight', null), apiBase: DEFAULT_API, set: () => {}, ready: false });

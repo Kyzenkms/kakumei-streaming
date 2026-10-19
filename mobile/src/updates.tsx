@@ -1,11 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getApiBase } from './api';
+import { usePrefs } from './prefs';
 
 const DISMISS_KEY = 'kakumei.update.dismissed';
+const SEEN_KEY = 'kakumei.whatsnew';
 
 type UpdateInfo = { latest: string; min: string; url: string };
 
@@ -20,6 +23,66 @@ export function isNewer(a: string, b: string): boolean {
     if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
   }
   return false;
+}
+
+const WHATS_NEW: Record<string, string[]> = {
+  '1.0.4': [
+    'Player rebuilt: portrait and landscape each get their own controls',
+    'Episodes now have a season dropdown and instant search',
+    'Watch party docks to the side while the video shrinks beside chat',
+    'Audio row highlights the language you are watching',
+    'New Black Luxury theme plus a custom colour wheel',
+    'Background play toggle in Settings',
+    'Smarter anime matching — right season, no live-action mix-ups',
+  ],
+};
+
+export function WhatsNew() {
+  const { t } = usePrefs();
+  const [entry, setEntry] = useState<{ version: string; items: string[] } | null>(null);
+
+  useEffect(() => {
+    const version = Constants.expoConfig?.version || '';
+    const items = WHATS_NEW[version];
+    if (!items) return;
+    let alive = true;
+    AsyncStorage.getItem(SEEN_KEY).then((seen) => {
+      if (!alive || seen === version) return;
+      setTimeout(() => { if (alive) setEntry({ version, items }); }, 700);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  if (!entry) return null;
+  const dismiss = () => {
+    AsyncStorage.setItem(SEEN_KEY, entry.version).catch(() => {});
+    setEntry(null);
+  };
+
+  return (
+    <View style={styles.wnWrap}>
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.62)' }]} onPress={dismiss} />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.05)', 'rgba(22,20,30,0.94)']}
+        style={styles.wnCard}
+      >
+        <View style={[styles.wnGlow, { backgroundColor: t.accent }]} />
+        <Text style={[styles.wnKicker, { color: t.accent }]}>NEW IN {entry.version}</Text>
+        <Text style={styles.wnTitle}>What&apos;s new</Text>
+        <View style={{ gap: 11, marginTop: 16 }}>
+          {entry.items.map((line) => (
+            <View key={line} style={styles.wnRow}>
+              <View style={[styles.wnDot, { backgroundColor: t.accent }]} />
+              <Text style={styles.wnItem}>{line}</Text>
+            </View>
+          ))}
+        </View>
+        <Pressable onPress={dismiss} style={[styles.wnBtn, { backgroundColor: t.accent }]}>
+          <Text style={[styles.wnBtnText, { color: t.onAccent }]}>Start watching</Text>
+        </Pressable>
+      </LinearGradient>
+    </View>
+  );
 }
 
 export function UpdateGate() {
@@ -134,4 +197,20 @@ const styles = StyleSheet.create({
   bannerBtn: { backgroundColor: '#7c3aed', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 16 },
   bannerBtnText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   bannerX: { color: '#8b8b9e', fontSize: 16, paddingHorizontal: 4 },
+  wnWrap: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 9998, elevation: 9998, alignItems: 'center', justifyContent: 'center', padding: 22,
+  },
+  wnCard: {
+    width: '100%', maxWidth: 420, borderRadius: 26, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.20)', padding: 22, overflow: 'hidden',
+  },
+  wnGlow: { position: 'absolute', top: -46, right: -34, width: 150, height: 150, borderRadius: 75, opacity: 0.22 },
+  wnKicker: { fontSize: 11, fontWeight: '800', letterSpacing: 3 },
+  wnTitle: { color: '#ffffff', fontSize: 26, fontWeight: '800', marginTop: 6 },
+  wnRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  wnDot: { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
+  wnItem: { flex: 1, color: 'rgba(255,255,255,0.86)', fontSize: 14, lineHeight: 20 },
+  wnBtn: { borderRadius: 999, paddingVertical: 13, alignItems: 'center', marginTop: 22 },
+  wnBtnText: { fontSize: 15, fontWeight: '800' },
 });

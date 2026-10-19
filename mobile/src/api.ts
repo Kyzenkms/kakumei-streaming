@@ -36,7 +36,12 @@ export const api = {
   details: (type: string, id: string) => get<any>(`/api/tmdb/${type}/${cleanId(id)}?append_to_response=external_ids,credits,videos`),
   recs: async (type: string, id: string) => api.unwrap(await get<any>(`/api/tmdb/${type}/${cleanId(id)}/recommendations`)),
   seasons: async (tvId: string) => (await get<any>(`/api/tmdb/tv/${cleanId(tvId)}`))?.seasons || [],
-  episodes: async (tvId: string, season: number) => api.unwrap(await get<any>(`/api/tmdb/tv/${cleanId(tvId)}/season/${season}`)),
+  // TMDB season payloads are {id, name, episodes:[...]} — not the {results}
+  // shape api.unwrap expects, so unwrap the episodes field explicitly.
+  episodes: async (tvId: string, season: number) => {
+    const d = await get<any>(`/api/tmdb/tv/${cleanId(tvId)}/season/${season}`);
+    return Array.isArray(d) ? d : (Array.isArray(d?.episodes) ? d.episodes : []);
+  },
   search: async (q: string) => {
     const query = q.trim();
     const tmdb = get<any>(`/api/tmdb/search/multi?query=${encodeURIComponent(query)}`).then(api.unwrap).catch(() => []);
@@ -140,6 +145,47 @@ export const api = {
 
 function cleanId(id: string): string {
   return String(id || '').split('_')[0];
+}
+
+// Best TMDB twin for a NetMirror catalog item. TMDB search returns the
+// original and its remake under one title ("One Piece": 1999 anime vs 2023
+// live action), so pick the candidate that can actually host the season/
+// episode being watched; when several can, the longer-running one wins.
+// ponytail: run-length tiebreak assumes originals outlive remakes — fine for
+// the anime/remake collisions this exists for.
+export async function pickTmdbMatch(results: any[], type: string, title: string, season = 1, episode = 1): Promise<any | null> {
+  const wantTV = type === 'tv';
+  const year = (String(title).match(/\b(19|20)\d{2}\b/) || [])[0] || '';
+  const name = String(title).replace(/\b(19|20)\d{2}\b/g, ' ').replace(/[[\]()]/g, ' ').trim() || String(title);
+  const wantNorm = searchNorm(name);
+  const wantTokens = searchTokens(name);
+  const pool = (Array.isArray(results) ? results : []).filter((r: any) => r?.id && !r.isNetMirror
+    && (wantTV ? r.media_type === 'tv' || !!r.first_air_date : r.media_type === 'movie' || !!r.release_date));
+  if (!pool.length) return null;
+  const yearOf = (r: any) => Number(String(r.first_air_date || r.release_date || '').slice(0, 4)) || 0;
+  const scored = pool.map((r: any) => {
+    const norm = searchNorm(r.title || r.name || '');
+    const overlap = tokenOverlap(searchTokens(r.title || r.name || ''), wantTokens) / Math.max(wantTokens.length, 1);
+    let s = norm === wantNorm ? 100 : norm.startsWith(wantNorm) ? 60 : overlap * 40;
+    if (year) s += yearOf(r) && Math.abs(yearOf(r) - Number(year)) <= 1 ? 50 : -25;
+    s += Math.min((r.popularity || 0) / 100, 5);
+    return { r, s };
+  }).sort((a, b) => b.s - a.s);
+  if (!wantTV) return scored[0].r;
+  const top = scored.filter((x) => x.s >= scored[0].s - 30).slice(0, 3);
+  if (top.length === 1) return top[0].r;
+  const dets = await Promise.all(top.map(async (x) => {
+    try {
+      const d = await api.details('tv', String(x.r.id));
+      return { r: x.r, s: x.s, seasons: Array.isArray(d?.seasons) ? d.seasons.filter((sn: any) => sn?.season_number > 0) : ([] as any[]) };
+    } catch { return { r: x.r, s: x.s, seasons: [] as any[] }; }
+  }));
+  const fits = dets.filter((d) => {
+    const sn = d.seasons.find((s: any) => s?.season_number === season);
+    return !!sn && (sn.episode_count || 0) >= episode;
+  });
+  const pick = (fits.length ? fits : dets).sort((a, b) => (b.seasons.length - a.seasons.length) || (b.s - a.s))[0];
+  return pick?.r || scored[0].r;
 }
 
 type SourcesOpts = {

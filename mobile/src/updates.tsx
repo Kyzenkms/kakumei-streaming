@@ -26,6 +26,13 @@ export function isNewer(a: string, b: string): boolean {
 }
 
 const WHATS_NEW: Record<string, string[]> = {
+  '1.0.5': [
+    'Colour picker rebuilt: tap a hue, then a tone',
+    'Seek bar no longer snaps back after seeking',
+    'Series opened from search now load the full episode list',
+    'Playback starts sooner: metadata loads after the stream',
+    'Next episode preloads in the background while you watch',
+  ],
   '1.0.4': [
     'Player rebuilt: portrait and landscape each get their own controls',
     'Episodes now have a season dropdown and instant search',

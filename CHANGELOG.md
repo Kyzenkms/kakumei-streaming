@@ -1,18 +1,15 @@
 # KyzenStream - Complete Changelog
 
-## Version 1.0.4 - Player & Personalisation (October 19, 2026)
+## Version 1.0.5 - Picker & Playback Fixes (October 19, 2026)
 
 ### Mobile
-- Player rebuilt: dedicated portrait and landscape control layouts, no overlapping transport
-- Compact settings and episodes cards (top-right) instead of full-screen sheets
-- Episode picker: season dropdown + instant search
-- Watch party docks to the right; video shrinks beside chat
-- Audio row shows and highlights the current language/dub
-- Black Luxury (onyx & gold) theme and a custom colour wheel for accents
-- Background play toggle (keeps audio playing when the app is backgrounded)
-- Glassy "What's new" card on first launch after an update
-- Anime-aware TMDB matching (correct anime entry, no live-action mix-ups)
-- Android: versionCode 10, versionName 1.0.4
+- Custom colour picker rebuilt natively: tap a hue on the ring, then a tone (no WebView, works on device)
+- Seek bar no longer springs back to the pre-seek position while the stream catches up
+- NetMirror titles from search ("Breaking Bad S1-S5" etc.) now resolve their TMDB twin, so series show the full episode list and seasons
+- Playback starts sooner: recommendations and episode metadata no longer compete with stream resolution
+- Next episode resolves in the background while you watch (binge prewarm)
+- Android: versionCode 11, versionName 1.0.5
+
 ## Version 1.0.4 - Player & Personalisation (October 19, 2026)
 
 ### Mobile

@@ -9,7 +9,7 @@ import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, prefetchSources, pickTmdbMatch, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
+import { api, prefetchSources, pickTmdbMatchCached, getApiBase, getCdnCfg, loadCdnCfg } from '../../../api';
 import { usePrefs } from '../../../prefs';
 import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
@@ -151,17 +151,19 @@ const [fsFull, setFsFull] = useState(false);
           if (alive) setRecs((r || []).filter((x: any) => x && x.id && (x.poster_path || x.backdrop_path)).slice(0, 18));
           return;
         }
+        // Let stream resolution finish first — metadata fetch must not compete
+        // with the critical /sources request.
+        if (!data) return;
         const q = expectedTitle || data?.title || '';
         if (!q) return;
-        const results = await api.search(q);
-        const match = await pickTmdbMatch(results, type, q, epCtxRef.current.season, epCtxRef.current.episode);
+        const match = await pickTmdbMatchCached(q, type, epCtxRef.current.season, epCtxRef.current.episode);
         if (!match) return;
         const r = await api.recs(match.media_type || type, match.id);
         if (alive) setRecs((r || []).filter((x: any) => x && x.id && (x.poster_path || x.backdrop_path)).slice(0, 18));
       } catch { if (alive) setRecs([]); }
     })();
     return () => { alive = false; };
-  }, [id, type, isNetMirrorId, expectedTitle, data?.title]);
+  }, [id, type, isNetMirrorId, expectedTitle, data?.title, data]);
 
   // Dub/language alternatives for this exact work (NetMirror catalog variants).
   // Try the stream's resolved title first, then the title we navigated with —
@@ -184,18 +186,33 @@ const [fsFull, setFsFull] = useState(false);
   // TMDB match by title first (same pattern as More Like This).
   useEffect(() => {
     if (!isTV || !isNetMirrorId || tmdbId) return;
+    // Wait for the stream resolve so the picker metadata doesn't slow playback.
+    if (!data) return;
     const q = expectedTitle || data?.title || '';
     if (!q) return;
     let alive = true;
     (async () => {
       try {
-        const results = await api.search(q);
-        const match = await pickTmdbMatch(results, 'tv', q, epCtxRef.current.season, epCtxRef.current.episode);
+        const match = await pickTmdbMatchCached(q, 'tv', epCtxRef.current.season, epCtxRef.current.episode);
         if (alive && match?.id) setTmdbId(String(match.id));
       } catch { /* picker falls back to Prev/Next only */ }
     })();
     return () => { alive = false; };
-  }, [isTV, isNetMirrorId, tmdbId, expectedTitle, data?.title]);
+  }, [isTV, isNetMirrorId, tmdbId, expectedTitle, data?.title, data]);
+
+  // Binge prewarm: resolve the next episode in the background once playback
+  // is up, so "Next" lands on a warm server cache instead of a cold 20-30s
+  // resolve. Episodes resolve per-episode on the backend, so this is the one
+  // client-side lever that actually removes the wait.
+  useEffect(() => {
+    if (!isTV || !data || !id) return;
+    const nextEp = episode + 1;
+    if (tvEps.length && !tvEps.some((e: any) => Number(e?.episode_number) === nextEp)) return;
+    const timer = setTimeout(() => {
+      prefetchSources({ id, type, season, episode: nextEp, title: expectedTitle, language, isNetMirror: isNetMirrorId }).catch(() => {});
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [isTV, data, id, type, season, episode, expectedTitle, language, isNetMirrorId, tvEps]);
 
   useEffect(() => {
     if (!isTV || !tmdbId) return;
@@ -843,7 +860,16 @@ function Player({
     const t = p?.currentTime ?? 0;
     const stamp = seekStampRef.current;
     if (stamp) {
-      if (Math.abs(t - stamp.target) <= 2.5 || Date.now() >= stamp.until) seekStampRef.current = null;
+      // ExoPlayer keeps reporting the pre-seek time for a while on network
+      // streams; hold the target so the bar never snaps backwards. Clear only
+      // once playback actually lands near the target (or the wait expires).
+      if (Math.abs(t - stamp.target) <= 2.5) {
+        seekStampRef.current = null;
+        if (!scrubbing) setPos(t);
+      } else if (Date.now() >= stamp.until) {
+        seekStampRef.current = null;
+        if (!scrubbing) setPos(t);
+      }
     } else if (!scrubbing) {
       setPos(t);
     }
@@ -897,7 +923,7 @@ function Player({
   const seekTo = useCallback((time: number) => {
     const d = player.duration || 0;
     const clamped = Math.max(0, d > 0 ? Math.min(d - 0.5, time) : time);
-    seekStampRef.current = { target: clamped, until: Date.now() + 1200 };
+    seekStampRef.current = { target: clamped, until: Date.now() + 8000 };
     player.currentTime = clamped;
     setPos(clamped);
     onSeekEvent(clamped);
@@ -915,7 +941,7 @@ function Player({
   useEffect(() => {
     if (!ref) return;
     (ref as any).current = {
-      seek: (tv: number) => { player.currentTime = tv; setPos(tv); },
+      seek: (tv: number) => seekToRef.current(tv),
       seekBy: (d: number) => seekTo((player.currentTime || 0) + d),
       getTime: () => player.currentTime || 0,
       getDuration: () => player.duration || 0,

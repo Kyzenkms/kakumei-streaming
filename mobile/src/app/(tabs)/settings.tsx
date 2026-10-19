@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { ACCENTS, THEMES } from '../../theme';
 import { usePrefs } from '../../prefs';
 import { api, setApiBase } from '../../api';
@@ -141,50 +140,70 @@ export default function SettingsScreen() {
   );
 }
 
-const WHEEL_HTML = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>
-html,body{margin:0;height:100%;background:#121016;overflow:hidden}
-body{display:flex;align-items:center;justify-content:center}
-canvas{display:block;touch-action:none;border-radius:50%}
-</style></head><body><canvas id="c" width="256" height="256"></canvas><script>
-var c=document.getElementById('c'),x=c.getContext('2d'),W=c.width,R=W/2-2,CX=W/2,CY=W/2;
-function hsv(h,s){var f=function(n){var k=(n+h/60)%6;return 1-s*Math.max(Math.min(k,4-k,1),0)};return [f(5),f(3),f(1)]}
-var img=x.createImageData(W,W);
-for(var py=0;py<W;py++){for(var px=0;px<W;px++){var dx=px-CX+.5,dy=py-CY+.5,d=Math.sqrt(dx*dx+dy*dy),i=(py*W+px)*4;
-if(d>R+1){img.data[i+3]=0;continue}
-var h=((Math.atan2(dy,dx)*180/Math.PI)+360)%360,s=Math.min(1,d/R),rgb=hsv(h,s);
-img.data[i]=rgb[0]*255;img.data[i+1]=rgb[1]*255;img.data[i+2]=rgb[2]*255;img.data[i+3]=d>R?Math.max(0,Math.min(255,Math.round(255*(R+1-d)))):255;}}
-x.putImageData(img,0,0);
-function send(ev){var b=c.getBoundingClientRect(),t=ev.touches?ev.touches[0]:ev,px=(t.clientX-b.left)*W/b.width-CX,py=(t.clientY-b.top)*W/b.height-CY,d=Math.sqrt(px*px+py*py);
-if(d>R)return;var h=((Math.atan2(py,px)*180/Math.PI)+360)%360,s=Math.min(1,d/R),rgb=hsv(h,s);
-var hex='#'+rgb.map(function(v){return Math.round(v*255).toString(16).padStart(2,'0')}).join('');
-window.ReactNativeWebView.postMessage(hex);}
-c.addEventListener('pointerdown',function(e){send(e);c.setPointerCapture(e.pointerId)});
-c.addEventListener('pointermove',function(e){if(e.buttons===1)send(e)});
-</script></body></html>`;
+const RING_STEPS = 24;
+function hueAt(i: number): string {
+  const h = (i / RING_STEPS) * 360;
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    return 255 * (1 - Math.max(Math.min(k, 4 - k, 1), 0));
+  };
+  const hex = (v: number) => Math.round(v).toString(16).padStart(2, '0');
+  return `#${hex(f(5))}${hex(f(3))}${hex(f(1))}`;
+}
+function shade(hex: string, amt: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((v) => Math.round(amt >= 0 ? v + (255 - v) * amt : v * (1 + amt)));
+  return `#${mix.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+const TONES = [-0.6, -0.3, 0, 0.4, 0.75];
 
 function ColourWheel({ visible, value, accent, bg, border, onClose, onPick }: {
   visible: boolean; value: string | null; accent: string; bg: string; border: string;
   onClose: () => void; onPick: (hex: string | null) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [hue, setHue] = useState<string | null>(null);
   const current = draft || (value?.startsWith('#') ? value : accent);
+  const toneBase = hue || current;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalDim} onPress={onClose} />
       <View style={styles.modalWrap} pointerEvents="box-none">
         <View style={[styles.modalCard, { backgroundColor: bg, borderColor: border }]}>
           <Text style={[styles.modalTitle, { color: '#fff' }]}>Custom accent</Text>
-          <Text style={[styles.modalSub, { color: 'rgba(255,255,255,0.55)' }]}>Drag around the wheel to pick your colour.</Text>
-          <View style={styles.wheelHolder}>
-            <WebView
-              source={{ html: WHEEL_HTML }}
-              originWhitelist={['*']}
-              scrollEnabled={false}
-              javaScriptEnabled
-              androidLayerType="hardware"
-              style={styles.wheelWeb}
-              onMessage={(e) => setDraft(e.nativeEvent.data)}
-            />
+          <Text style={[styles.modalSub, { color: 'rgba(255,255,255,0.55)' }]}>Tap a hue, then a tone.</Text>
+          <View style={styles.wheelStage}>
+            {Array.from({ length: RING_STEPS }).map((_, i) => {
+              const a = (i / RING_STEPS) * Math.PI * 2;
+              const hex = hueAt(i);
+              return (
+                <Pressable
+                  key={hex}
+                  onPress={() => { setHue(hex); setDraft(hex); }}
+                  style={[styles.hueChip, {
+                    backgroundColor: hex,
+                    left: 116 + Math.cos(a) * 92 - 13,
+                    top: 116 + Math.sin(a) * 92 - 13,
+                    borderColor: hue === hex ? '#fff' : 'rgba(0,0,0,0.35)',
+                    borderWidth: hue === hex ? 3 : 2,
+                  }]}
+                />
+              );
+            })}
+            <View style={[styles.wheelCenter, { backgroundColor: current }]} pointerEvents="none" />
+          </View>
+          <View style={styles.toneRow}>
+            {TONES.map((amt) => {
+              const hex = shade(toneBase, amt);
+              return (
+                <Pressable
+                  key={amt}
+                  onPress={() => setDraft(hex)}
+                  style={[styles.toneChip, { backgroundColor: hex, borderColor: draft === hex ? '#fff' : 'rgba(255,255,255,0.25)' }]}
+                />
+              );
+            })}
           </View>
           <View style={styles.previewRow}>
             <View style={[styles.previewDot, { backgroundColor: current }]} />
@@ -242,8 +261,11 @@ const styles = StyleSheet.create({
   modalCard: { width: '100%', maxWidth: 360, borderRadius: 24, borderWidth: 1, padding: 20 },
   modalTitle: { fontSize: 20, fontWeight: '800' },
   modalSub: { fontSize: 12, marginTop: 4 },
-  wheelHolder: { alignItems: 'center', marginTop: 16, borderRadius: 128, overflow: 'hidden', alignSelf: 'center' },
-  wheelWeb: { width: 256, height: 256, backgroundColor: '#121016' },
+  wheelStage: { width: 232, height: 232, marginTop: 16, alignSelf: 'center' },
+  hueChip: { position: 'absolute', width: 26, height: 26, borderRadius: 13 },
+  wheelCenter: { position: 'absolute', left: 63, top: 63, width: 106, height: 106, borderRadius: 53, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  toneRow: { flexDirection: 'row', gap: 10, justifyContent: 'center', marginTop: 16 },
+  toneChip: { width: 30, height: 30, borderRadius: 15, borderWidth: 2 },
   previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 14 },
   previewDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
   previewHex: { fontSize: 14, fontWeight: '700', letterSpacing: 1 },

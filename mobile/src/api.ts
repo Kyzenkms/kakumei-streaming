@@ -188,6 +188,34 @@ export async function pickTmdbMatch(results: any[], type: string, title: string,
   return pick?.r || scored[0].r;
 }
 
+// NetMirror catalog titles carry language tags and season-range suffixes
+// ("Breaking Bad S1-S5"), which TMDB search cannot match. Strip them before
+// querying TMDB for metadata.
+export function tmdbQuery(title: string): string {
+  return String(title)
+    .replace(/\s*\[[^\]]*\]\s*/g, ' ')
+    .replace(/\s*\bS\d+\s*[-–]\s*S?\d+\b.*$/i, ' ')
+    .replace(/\s*\bS\d+\b.*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || String(title).trim();
+}
+
+const tmdbPickCache = new Map<string, Promise<any | null>>();
+
+// Search + match for a title, deduped: the play screen resolves recs, the
+// episode picker and the TMDB twin from the same lookup.
+export function pickTmdbMatchCached(title: string, type: string, season = 1, episode = 1): Promise<any | null> {
+  const q = tmdbQuery(title);
+  if (!q) return Promise.resolve(null);
+  const key = `${type}|${season}|${episode}|${q.toLowerCase()}`;
+  const hit = tmdbPickCache.get(key);
+  if (hit) return hit;
+  const p = api.search(q).then((results) => pickTmdbMatch(results, type, q, season, episode));
+  tmdbPickCache.set(key, p);
+  p.catch(() => tmdbPickCache.delete(key));
+  return p;
+}
+
 type SourcesOpts = {
   id: string; type: string; season?: number; episode?: number;
   title?: string; language?: string; isNetMirror?: boolean; fresh?: boolean;

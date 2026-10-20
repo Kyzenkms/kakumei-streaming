@@ -2,7 +2,7 @@
   "expo": {
     "name": "kakumei-mobile",
     "slug": "kakumei-mobile",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "portrait",
     "scheme": "kakumei",
     "icon": "./assets/icon.png",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.kakumei.mobile",
-      "versionCode": 12,
+      "versionCode": 13,
       "adaptiveIcon": {
         "backgroundColor": "#07070e",
         "foregroundImage": "./assets/android-icon-foreground.png",

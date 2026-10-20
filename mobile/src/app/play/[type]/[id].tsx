@@ -15,7 +15,7 @@ import { saveRecent } from '../../../recent';
 import { PosterCard } from '../../../components/PosterCard';
 import { WatchPartySheet } from '../../../components/WatchPartySheet';
 import { party } from '../../../party/party';
-import { cueTextAt, parseVtt, SUB_COLORS, SUB_RANGES, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
+import { cueTextAt, parseVtt, isDarkColor, SUB_HUES, SUB_TONES, SUB_RANGES, SUB_STYLE_DEFAULT, type Cue, type SubStyle } from '../../../subtitles';
 
 type ExtServer = { key: string; label: string; url: string };
 
@@ -884,6 +884,20 @@ function Player({
     ? cueCache.current.get(subUrl) || (fetchedCues?.url === subUrl ? fetchedCues.cues : EMPTY_CUES)
     : EMPTY_CUES;
 
+  // Keep the chosen track stable when the list is replaced (e.g. the
+  // OpenSubtitles finder merges in after mount): index-based selection would
+  // silently point at a different subtitle mid-playback.
+  const prevSubs = useRef(subs);
+  useEffect(() => {
+    if (prevSubs.current === subs) return;
+    const prev = prevSubs.current;
+    prevSubs.current = subs;
+    if (subIdx < 0) return;
+    const url = prev[subIdx]?.url;
+    const ni = url ? subs.findIndex((s) => s.url === url) : -1;
+    if (ni !== subIdx) setSubIdx(ni);
+  }, [subs, subIdx]);
+
   // Our overlay replaces native rendering when the engine has tracks — stops
   // ExoPlayer's auto-selected manifest track from double-rendering.
   useEffect(() => {
@@ -925,7 +939,9 @@ function Player({
         if (!scrubbing) setPos(t);
       } else if (Date.now() >= stamp.until) {
         seekStampRef.current = null;
-        if (!scrubbing) setPos(t);
+        // Engines sometimes report 0 while still re-buffering after a seek;
+        // never let that yank the bar (or the next tap's baseline) to the start.
+        if (!scrubbing && (t > 1 || stamp.target <= 5)) setPos(t);
       }
     } else if (!scrubbing) {
       setPos(t);
@@ -980,14 +996,16 @@ function Player({
   const seekTo = useCallback((time: number) => {
     const d = player.duration || 0;
     const clamped = Math.max(0, d > 0 ? Math.min(d - 0.5, time) : time);
-    seekStampRef.current = { target: clamped, until: Date.now() + 8000 };
+    seekStampRef.current = { target: clamped, until: Date.now() + 12000 };
     player.currentTime = clamped;
     setPos(clamped);
     onSeekEvent(clamped);
   }, [player, onSeekEvent]);
 
   const skip = useCallback((delta: number) => {
-    const target = (player.currentTime || 0) + delta;
+    // Right after a seek the engine still reports the old (often 0) position —
+    // stack ±10s on the pending target instead.
+    const target = (seekStampRef.current?.target ?? player.currentTime ?? 0) + delta;
     seekTo(target);
     pokeControls();
     setSeekHint(delta);
@@ -1024,6 +1042,13 @@ function Player({
     try { videoViewRef.current?.startPictureInPicture(); } catch { setPipNote(true); setTimeout(() => setPipNote(false), 3000); }
   };
 
+  // Scrub math: anchor the ratio at touch-down and apply the gesture's dx.
+  // `locationX` on move/release is relative to whatever child sits under the
+  // finger, so using it directly made drags jump and releases seek to 0:00.
+  const scrubAnchor = useRef(0);
+  const scrubRatio = useCallback((dx: number) => {
+    return Math.max(0, Math.min(1, scrubAnchor.current + dx / Math.max(1, trackWRef.current)));
+  }, []);
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -1035,20 +1060,19 @@ function Player({
         setScrubbing(true);
         const d = playerRef.current?.duration || 0;
         const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
+        scrubAnchor.current = ratio;
         setScrubTime(ratio * d);
       },
-      onPanResponderMove: (evt) => {
+      onPanResponderMove: (_evt, gs) => {
         const d = playerRef.current?.duration || 0;
-        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
-        setScrubTime(ratio * d);
+        setScrubTime(scrubRatio(gs.dx) * d);
       },
-      onPanResponderRelease: (evt) => {
+      onPanResponderRelease: (_evt, gs) => {
         const d = playerRef.current?.duration || 0;
         setScrubbing(false);
         pokeRef.current();
         if (d <= 0) return;
-        const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / Math.max(1, trackWRef.current)));
-        seekToRef.current(ratio * d);
+        seekToRef.current(scrubRatio(gs.dx) * d);
       },
       // Android can cancel the gesture (modal/sheet steal) — never leave the
       // bar in scrubbing state, or playback position freezes.
@@ -1074,6 +1098,7 @@ function Player({
   };
 
   const subLine = cues.length ? cueTextAt(cues, (scrubbing ? scrubTime : pos) - subStyle.sync) : null;
+  const subShadow = isDarkColor(subStyle.color) ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.95)';
   const progress = dur > 0 ? Math.min(1, (scrubbing ? scrubTime : pos) / dur) : 0;
   const bufferRatio = dur > 0 ? Math.min(1, buffered / dur) : 0;
   const buffering = status === 'loading' || status === 'idle';
@@ -1114,7 +1139,7 @@ function Player({
 
       {subLine ? (
         <View style={[styles.subOverlay, { bottom: subStyle.position + (fullscreen ? 80 : controls ? 66 : 0) }]} pointerEvents="none">
-          <Text style={[styles.subText, { fontSize: subStyle.size, color: subStyle.color }]}>{subLine}</Text>
+          <Text style={[styles.subText, { fontSize: subStyle.size, color: subStyle.color, textShadowColor: subShadow }]}>{subLine}</Text>
         </View>
       ) : null}
 
@@ -1199,9 +1224,9 @@ function Player({
                 onLayout={(e) => { trackWRef.current = e.nativeEvent.layout.width || 1; }}
                 {...pan.panHandlers}
               >
-                <View style={[styles.trackBuffered, { width: `${bufferRatio * 100}%` }]} />
-                <View style={[styles.trackPlayed, { width: `${progress * 100}%`, backgroundColor: t.accent }]} />
-                <View style={[styles.trackThumb, { left: `${progress * 100}%` }]} />
+                <View style={[styles.trackBuffered, { width: `${bufferRatio * 100}%` }]} pointerEvents="none" />
+                <View style={[styles.trackPlayed, { width: `${progress * 100}%`, backgroundColor: t.accent }]} pointerEvents="none" />
+                <View style={[styles.trackThumb, { left: `${progress * 100}%` }]} pointerEvents="none" />
               </View>
               <Text style={styles.timeText}>{fmtTime(dur)}</Text>
             </View>
@@ -1300,14 +1325,10 @@ function Player({
                 {activeSubIdx >= 0 && (
                   <>
                     <Text style={[styles.sheetSection, { color: t.muted }]}>TEXT COLOR</Text>
-                    <View style={styles.optionWrap}>
-                      {SUB_COLORS.map((c) => (
-                        <Pressable key={c.value} onPress={() => patchSubStyle({ color: c.value })} accessibilityLabel={c.label} style={[styles.colorDot, { backgroundColor: c.value }, subStyle.color === c.value && { borderColor: t.accent, borderWidth: 3 }]} />
-                      ))}
-                    </View>
+                    <ColorWheel value={subStyle.color} accent={t.accent} onChange={(c) => patchSubStyle({ color: c })} />
                     <SliderBar label="TEXT SIZE" value={subStyle.size} min={SUB_RANGES.size.min} max={SUB_RANGES.size.max} step={SUB_RANGES.size.step} display={`${Math.round(subStyle.size)} px`} accent={t.accent} onChange={(n) => patchSubStyle({ size: n })} />
                     <SliderBar label="POSITION" value={subStyle.position} min={SUB_RANGES.position.min} max={SUB_RANGES.position.max} step={SUB_RANGES.position.step} display={`${Math.round(subStyle.position)} px`} accent={t.accent} onChange={(n) => patchSubStyle({ position: n })} />
-                    <SliderBar label="SYNC" value={subStyle.sync} min={SUB_RANGES.sync.min} max={SUB_RANGES.sync.max} step={SUB_RANGES.sync.step} display={`${subStyle.sync > 0 ? '+' : ''}${subStyle.sync.toFixed(1)}s`} accent={t.accent} onChange={(n) => patchSubStyle({ sync: n })} />
+                    <SliderBar label="SYNC" value={subStyle.sync} min={SUB_RANGES.sync.min} max={SUB_RANGES.sync.max} step={SUB_RANGES.sync.step} display={`${subStyle.sync > 0 ? '+' : ''}${Math.round(subStyle.sync * 100) / 100}s`} accent={t.accent} onChange={(n) => patchSubStyle({ sync: n })} />
                   </>
                 )}
               </>
@@ -1454,6 +1475,7 @@ function SliderBar({ label, value, min, max, step, display, accent, onChange }: 
   label: string; value: number; min: number; max: number; step?: number; display: string; accent: string; onChange: (n: number) => void;
 }) {
   const wRef = useRef(1);
+  const anchorRef = useRef(0);
   const setFromX = useCallback((x: number) => {
     const ratio = Math.max(0, Math.min(1, x / wRef.current));
     let raw = min + ratio * (max - min);
@@ -1464,8 +1486,11 @@ function SliderBar({ label, value, min, max, step, display, accent, onChange }: 
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => setFromX(e.nativeEvent.locationX),
-      onPanResponderMove: (e) => setFromX(e.nativeEvent.locationX),
+      onPanResponderGrant: (e) => {
+        anchorRef.current = e.nativeEvent.locationX;
+        setFromX(anchorRef.current);
+      },
+      onPanResponderMove: (_e, gs) => setFromX(anchorRef.current + gs.dx),
     }),
   ).current;
   const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
@@ -1480,11 +1505,43 @@ function SliderBar({ label, value, min, max, step, display, accent, onChange }: 
         onLayout={(e) => { wRef.current = e.nativeEvent.layout.width || 1; }}
         {...pan.panHandlers}
       >
-        <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)' }}>
+        <View style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)' }} pointerEvents="none">
           <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratio * 100}%`, borderRadius: 2, backgroundColor: accent }} />
           <View style={{ position: 'absolute', top: -5, left: `${ratio * 100}%`, width: 14, height: 14, borderRadius: 7, backgroundColor: '#fff', marginLeft: -7 }} />
         </View>
       </View>
+    </View>
+  );
+}
+
+// Hue ring + black→white tone ring. A real wheel, no gradient libs: 24 hue
+// dots around the rim, 8 greys inside (pure black included).
+const WHEEL_SIZE = 208;
+const WHEEL_HUE_R = 84;
+const WHEEL_TONE_R = 48;
+const WHEEL_DOT = 18;
+function ColorWheel({ value, accent, onChange }: { value: string; accent: string; onChange: (c: string) => void }) {
+  const c = WHEEL_SIZE / 2;
+  const dot = (color: string, radius: number, angle: number, key: string) => {
+    const active = value === color;
+    return (
+      <Pressable
+        key={key}
+        onPress={() => onChange(color)}
+        accessibilityLabel={color}
+        hitSlop={3}
+        style={[
+          styles.wheelDot,
+          { backgroundColor: color, left: c + Math.cos(angle) * radius - WHEEL_DOT / 2, top: c + Math.sin(angle) * radius - WHEEL_DOT / 2 },
+          active && { borderColor: accent, borderWidth: 3, transform: [{ scale: 1.2 }] },
+        ]}
+      />
+    );
+  };
+  return (
+    <View style={{ width: WHEEL_SIZE, height: WHEEL_SIZE, alignSelf: 'center', marginTop: 2 }}>
+      {SUB_HUES.map((col, i) => dot(col, WHEEL_HUE_R, (i / SUB_HUES.length) * Math.PI * 2 - Math.PI / 2, `h${i}`))}
+      {SUB_TONES.map((col, i) => dot(col, WHEEL_TONE_R, (i / SUB_TONES.length) * Math.PI * 2 - Math.PI / 2 + Math.PI / SUB_TONES.length, `t${i}`))}
     </View>
   );
 }
@@ -1532,7 +1589,7 @@ const styles = StyleSheet.create({
   bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 },
   subOverlay: { position: 'absolute', left: 14, right: 14, alignItems: 'center' },
   subText: { textAlign: 'center', fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-  colorDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)' },
+  wheelDot: { position: 'absolute', width: WHEEL_DOT, height: WHEEL_DOT, borderRadius: WHEEL_DOT / 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   modalWrap: { flex: 1, alignItems: 'flex-end', paddingRight: 10 },
   modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { width: '92%', maxWidth: 360, maxHeight: '70%', borderRadius: 18, borderWidth: 1, padding: 14 },

@@ -26,6 +26,13 @@ export function isNewer(a: string, b: string): boolean {
 }
 
 const WHATS_NEW: Record<string, string[]> = {
+  '1.0.7': [
+    'Seek bar rebuilt: drag anywhere on it, no more snapping back to the start',
+    'Subtitles stay on the track you picked when switching episodes or qualities',
+    'Subtitle sync now covers ±30 seconds, with WebVTT timing-map support',
+    'Colour wheel: 24 hues plus black, charcoal and 8 tone levels',
+    'Wrong-movie subtitle matches filtered out on the server',
+  ],
   '1.0.6': [
     'Episode lists now come from NetMirror itself, so seasons and episode numbers match exactly',
     'Series opened from search show the correct episodes right away',

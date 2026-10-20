@@ -1,5 +1,27 @@
 # KyzenStream - Complete Changelog
 
+## Version 1.0.7 - Seek & Subtitle Reliability (October 20, 2026)
+
+### Mobile
+- Seek bar drag rebuilt on a stable anchor: taps and drags both land where you release
+- Player no longer snaps back to the start while the stream re-buffers after a seek
+- Subtitle track choice survives episode and quality switches
+- Sync slider widened to +/-30s in 0.25s steps; WebVTT X-TIMESTAMP-MAP offsets applied
+- 24-hue colour wheel plus 8 tone rings, including true black and charcoal with an adaptive outline
+- Overlapping cues no longer drop the visible line
+- Android: versionCode 13, versionName 1.0.7
+
+### Web / Desktop player
+- Subtitle colour selector actually changes colour (it was writing to the size field)
+- Late subtitle-list merges keep the chosen track and playback position instead of restarting at 0:00
+- Stale subtitle downloads can no longer overwrite a newer track selection
+- Bigger seek-bar hit target; controls stay reachable on touch devices
+- Wider sync presets and black/grey/extra colour choices
+
+### Backend
+- Subtitle search ranks exact movie matches first and drops series/season packs for films
+
+
 ## Version 1.0.6 - Episode Switching & Resolve Speed (October 19, 2026)
 
 ### Mobile

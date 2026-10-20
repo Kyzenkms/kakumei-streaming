@@ -317,6 +317,10 @@ export default function NetMirrorPlayer({
     }
   }, []);
 
+  // Survives player re-inits (late subtitle merge, quality/server switch) so a
+  // rebuild resumes instead of dumping the viewer back at 0:00.
+  const resumeRef = useRef(0);
+
   // ── Seek flash overlay ──
   const showFlash = (side) => {
     if (!wrapperRef.current) return;
@@ -432,6 +436,7 @@ export default function NetMirrorPlayer({
 
     // ── Direct In-Memory Subtitle Engine (bypasses browser <track> CORS restrictions) ──
     const cuesRef = { current: [] };
+    let subLoadSeq = 0;
 
     const parseVttOrSrt = (text) => {
       if (!text) return [];
@@ -452,12 +457,18 @@ export default function NetMirrorPlayer({
 
       const timeRe = /((?:\d+:)?\d+:\d+(?:[.,]\d+)?)\s*-->\s*((?:\d+:)?\d+:\d+(?:[.,]\d+)?)/;
 
+      // WebVTT header offset used by MPEG-TS segments (HLS subs): cues are in
+      // segment-local time, MPEGTS is the stream PTS at 90 kHz.
+      let tsOffset = 0;
+      const mapM = text.match(/X-TIMESTAMP-MAP\s*=\s*LOCAL:\s*([\d:.]+)\s*,\s*MPEGTS:\s*(\d+)/i);
+      if (mapM) tsOffset = Number(mapM[2]) / 90000 - parseTime(mapM[1]);
+
       while (i < lines.length) {
         const line = lines[i].trim();
         const m = line.match(timeRe);
         if (m) {
-          const start = parseTime(m[1]);
-          const end = parseTime(m[2]);
+          const start = parseTime(m[1]) + tsOffset;
+          const end = parseTime(m[2]) + tsOffset;
           i++;
           const textLines = [];
           while (i < lines.length && lines[i].trim() !== '') {
@@ -523,8 +534,16 @@ export default function NetMirrorPlayer({
         ? 'background: transparent !important; border-radius: 4px;'
         : 'background: ' + st.bg + ' !important; backdrop-filter: blur(4px); border-radius: 6px !important; padding: 4px 12px !important;';
 
+      // Dark subtitle colours need a light outline or they vanish on dark scenes.
+      const hexM = /^#([0-9a-f]{6})$/i.exec(st.color || '');
+      let darkText = false;
+      if (hexM) {
+        const n = parseInt(hexM[1], 16);
+        darkText = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.42;
+      }
+      const edge = darkText ? '#fff' : '#000';
       const shadowCss = st.bg === 'transparent'
-        ? 'text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 2px 4px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.8) !important;'
+        ? 'text-shadow: -1.5px -1.5px 0 ' + edge + ', 1.5px -1.5px 0 ' + edge + ', -1.5px 1.5px 0 ' + edge + ', 1.5px 1.5px 0 ' + edge + ', 0 2px 4px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.8) !important;'
         : 'text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 2px rgba(0,0,0,1) !important;';
 
       const html = active.map(c => '<span class="nm-sub-line" style="' + sizeInline + 'color: ' + st.color + ' !important; ' + bgCss + ' ' + shadowCss + '">' + c.text + '</span>').join('<br/>');
@@ -538,6 +557,7 @@ export default function NetMirrorPlayer({
     };
 
     const loadSubtitleTrack = async (url) => {
+      const seq = ++subLoadSeq;
       if (!url) {
         cuesRef.current = [];
         renderCues();
@@ -549,8 +569,10 @@ export default function NetMirrorPlayer({
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const res = await fetch(url);
+          if (seq !== subLoadSeq) return; // a newer track was selected meanwhile
           if (res.ok) {
             const body = await res.text();
+            if (seq !== subLoadSeq) return;
             const cues = parseVttOrSrt(body);
             if (cues.length > 0) {
               cuesRef.current = cues;
@@ -577,13 +599,17 @@ export default function NetMirrorPlayer({
     const settingsArr = [];
 
     if (proxiedSubs.length > 0) {
+      // A late subtitle-list merge re-inits this player; keep the viewer's
+      // chosen track instead of snapping back to the first language.
+      const keepUrl = activeTrackRef.current;
       settingsArr.push({
         width: 190, html: 'Subtitle Track', tooltip: proxiedSubs[0]?.label || 'English',
         selector: [
-          { html: 'Off', url: '' },
-          ...proxiedSubs.map((s, i) => ({ default: i === 0, html: s.label || ('Track ' + (i + 1)), url: s.url })),
+          { html: 'Off', url: '', default: keepUrl === '' },
+          ...proxiedSubs.map((s, i) => ({ default: keepUrl ? s.url === keepUrl : (keepUrl === null && i === 0), html: s.label || ('Track ' + (i + 1)), url: s.url })),
         ],
         onSelect(item) {
+          activeTrackRef.current = item.url || '';
           if (!item.url) {
             setSubtitleVisible(false);
             const el = wrapperRef.current?.querySelector('#nm-cc');
@@ -611,12 +637,18 @@ export default function NetMirrorPlayer({
         width: 190, html: 'Subtitle Color', tooltip: 'Crisp White',
         selector: [
           { default: true, html: '⚪ Crisp White', value: '#ffffff' },
+          { html: '🖤 Ink Black', value: '#000000' },
+          { html: '🌑 Charcoal', value: '#374151' },
+          { html: '🩶 Soft Grey', value: '#9ca3af' },
           { html: '🟡 Anime Yellow', value: '#fde047' },
           { html: '🔵 Soft Cyan', value: '#22d3ee' },
           { html: '🟢 Mint Green', value: '#4ade80' },
+          { html: '🟠 Tangerine', value: '#fb923c' },
+          { html: '🩷 Rose', value: '#fb7185' },
+          { html: '🟣 Violet', value: '#c084fc' },
         ],
       onSelect(item) {
-        subStyleRef.current.size = item.value;
+        subStyleRef.current.color = item.value;
         applySubStyles();
         return item.html;
       },
@@ -660,11 +692,15 @@ export default function NetMirrorPlayer({
       settingsArr.push({
         width: 190, html: 'Subtitle Sync', tooltip: '0.0s (Normal)',
         selector: [
+          { html: '-5.0s (Early)', val: -5.0 },
+          { html: '-2.0s (Early)', val: -2.0 },
           { html: '-1.0s (Early)', val: -1.0 },
           { html: '-0.5s (Early)', val: -0.5 },
           { default: true, html: '0.0s (Sync)', val: 0.0 },
           { html: '+0.5s (Delay)', val: 0.5 },
           { html: '+1.0s (Delay)', val: 1.0 },
+          { html: '+2.0s (Delay)', val: 2.0 },
+          { html: '+5.0s (Delay)', val: 5.0 },
         ],
         onSelect(item) {
           subOffsetRef.current = item.val;
@@ -969,6 +1005,17 @@ export default function NetMirrorPlayer({
 
     artRef.current = art;
 
+    art.on('video:timeupdate', () => { resumeRef.current = art.currentTime || 0; });
+    art.on('ready', () => {
+      const t = resumeRef.current;
+      if (t > 1 && Number.isFinite(t)) {
+        try { art.currentTime = t; } catch (_) {}
+      }
+    });
+    if (activeTrackRef.current && proxiedSubs.some((s) => s.url === activeTrackRef.current)) {
+      loadSubtitleTrack(activeTrackRef.current);
+    }
+
     // ── ⏱️ Side-by-Side Progress Bar + Duration Row (Exact Match to Showcase) ──
     let isDraggingProgress = false;
     const setupSideBySideTime = () => {
@@ -1161,8 +1208,9 @@ export default function NetMirrorPlayer({
     art.video.removeAttribute('crossorigin');
 
     art.on('ready', () => {
-      // Load initial subtitle track for MP4, HLS and DASH
-      if (proxiedSubs.length > 0) {
+      // Load initial subtitle track for MP4, HLS and DASH — unless the viewer
+      // already picked one (kept across re-inits) or explicitly turned subs off.
+      if (proxiedSubs.length > 0 && activeTrackRef.current === null) {
         loadSubtitleTrack(proxiedSubs[0].url);
       }
       if (isHls || isDash) return;
@@ -1614,19 +1662,20 @@ export default function NetMirrorPlayer({
           pointer-events: auto !important;
         }
 
-        .art-video-player:not(.art-hover) .art-bottom {
+        .art-video-player:not(.art-hover):not(.art-control-show) .art-bottom {
           opacity: 0 !important;
           transform: translateY(8px) !important;
         }
-        .art-video-player.art-hover .art-bottom {
+        .art-video-player.art-hover .art-bottom,
+        .art-video-player.art-control-show .art-bottom {
           opacity: 1 !important;
           transform: translateY(0) !important;
         }
         /* Hidden bar must not intercept anything. */
-        .art-video-player:not(.art-hover) .art-bottom .nm-seek-row,
-        .art-video-player:not(.art-hover) .art-bottom .art-controls,
-        .art-video-player:not(.art-hover) .art-bottom .art-progress,
-        .art-video-player:not(.art-hover) .art-bottom .art-control {
+        .art-video-player:not(.art-hover):not(.art-control-show) .art-bottom .nm-seek-row,
+        .art-video-player:not(.art-hover):not(.art-control-show) .art-bottom .art-controls,
+        .art-video-player:not(.art-hover):not(.art-control-show) .art-bottom .art-progress,
+        .art-video-player:not(.art-hover):not(.art-control-show) .art-bottom .art-control {
           pointer-events: none !important;
         }
 
@@ -1642,6 +1691,12 @@ export default function NetMirrorPlayer({
           width: auto !important;
           margin: 0 !important;
           cursor: pointer !important;
+          /* Fat touch target without visually thickening the 4px track: the
+             extra padding is pulled back out of the flex layout. */
+          padding-top: 11px !important;
+          padding-bottom: 11px !important;
+          margin-top: -7px !important;
+          margin-bottom: -7px !important;
         }
         .nm-seek-row .art-control-time {
           display: inline-flex !important;

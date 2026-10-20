@@ -10,7 +10,7 @@ All builds are attached to the [latest release](https://github.com/Kyzenkms/kyze
 
 | App | Download | Also on the site |
 | --- | --- | --- |
-| Windows (installer) | [Kakumei-Setup-0.1.6.exe](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.4/Kakumei-Setup-0.1.6.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe |
+| Windows (installer) | [Kakumei-Setup-0.1.7.exe](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.7/Kakumei-Setup-0.1.7.exe) | https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.7.exe |
 | Android â€” arm64-v8a (most phones) | [kakumei-1.0.7-arm64-v8a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.7/kakumei-1.0.7-arm64-v8a.apk) | https://stream.kyzenhub.site/downloads/kakumei-android-1.0.7.apk |
 | Android â€” armeabi-v7a (older 32-bit) | [kakumei-1.0.7-armeabi-v7a.apk](https://github.com/Kyzenkms/kakumei-streaming/releases/download/v1.0.7/kakumei-1.0.7-armeabi-v7a.apk) | https://stream.kyzenhub.site/downloads/kakumei-android-1.0.7.apk |
 
@@ -21,7 +21,7 @@ The universal APK (~146 MB) exceeds GitHub's 100 MB commit limit, so it lives on
 The installer is not code-signed, so Windows shows a SmartScreen warning when it's downloaded in a browser. To skip it, download from the command line instead â€” open Command Prompt (Win + R â†’ `cmd`) and run:
 
 ```cmd
-curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.6.exe && %TEMP%\Kakumei.exe
+curl -Lo %TEMP%\Kakumei.exe https://stream.kyzenhub.site/downloads/Kakumei-Setup-0.1.7.exe && %TEMP%\Kakumei.exe
 ```
 
 Files fetched this way don't carry the browser's Mark of the Web, so the installer opens without the warning.

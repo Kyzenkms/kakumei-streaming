@@ -832,6 +832,84 @@ export default function NetMirrorPlayer({
 
     const customControls = [];
 
+    // ── Subtitle colour wheel: 24 hues outer ring, 8 greys inner ring ──
+    // Desktop mirrors the mobile picker (hue + tone) instead of 4 presets.
+    const hslToHex = (h, s, l) => {
+      s /= 100; l /= 100;
+      const k = (n) => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      return '#' + [f(0), f(8), f(4)].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+    };
+    const WHEEL_HUES = Array.from({ length: 24 }, (_, i) => hslToHex(i * 15, 85, 55));
+    const WHEEL_TONES = ['#000000', '#1a1a1a', '#333333', '#4d4d4d', '#808080', '#b3b3b3', '#e5e5e5', '#ffffff'];
+
+    const toggleColorWheel = () => {
+      const root = containerRef.current;
+      if (!root) return;
+      const open = root.querySelector('.nm-wheel-pop');
+      if (open) { open.remove(); return; }
+      const pop = document.createElement('div');
+      pop.className = 'nm-wheel-pop';
+      pop.innerHTML = `
+        <div class="nm-wheel-head">
+          <span>Subtitle colour</span>
+          <span class="nm-wheel-preview" style="background:${subStyleRef.current.color}"></span>
+        </div>
+        <div class="nm-wheel"></div>
+        <div class="nm-wheel-foot"><span class="nm-wheel-hex">${subStyleRef.current.color}</span><span class="nm-wheel-hint">hue · tone</span></div>`;
+      root.appendChild(pop);
+      const wheel = pop.querySelector('.nm-wheel');
+      const preview = pop.querySelector('.nm-wheel-preview');
+      const hexLabel = pop.querySelector('.nm-wheel-hex');
+      const pick = (color) => {
+        subStyleRef.current.color = color;
+        applySubStyles();
+        preview.style.background = color;
+        hexLabel.textContent = color;
+        wheel.querySelectorAll('.nm-dot').forEach((d) => d.classList.toggle('on', d.dataset.color === color));
+      };
+      const ring = (colors, radius, size) => {
+        colors.forEach((c, i) => {
+          const a = (i / colors.length) * Math.PI * 2 - Math.PI / 2;
+          const dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = 'nm-dot' + (subStyleRef.current.color === c ? ' on' : '');
+          dot.dataset.color = c;
+          dot.title = c;
+          dot.style.cssText = `width:${size}px;height:${size}px;background:${c};left:${104 + Math.cos(a) * radius - size / 2}px;top:${104 + Math.sin(a) * radius - size / 2}px`;
+          dot.addEventListener('click', (e) => { e.stopPropagation(); pick(c); });
+          wheel.appendChild(dot);
+        });
+      };
+      ring(WHEEL_HUES, 84, 15);
+      ring(WHEEL_TONES, 46, 13);
+      wheel.addEventListener('click', (e) => e.stopPropagation());
+      setTimeout(() => {
+        const close = (e) => {
+          if (!pop.isConnected) { document.removeEventListener('mousedown', close); return; }
+          if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', close); }
+        };
+        document.addEventListener('mousedown', close);
+      }, 0);
+    };
+
+    customControls.push({
+      name: 'subtitle-color-wheel', position: 'right', index: 12,
+      html: `<div id="nm-wheel-btn" title="Subtitle colour wheel" style="
+        display:inline-flex;align-items:center;justify-content:center;
+        width:30px;height:30px;border-radius:50%;cursor:pointer;
+        color:rgba(255,255,255,.85);transition:all .18s ease;margin:0 2px">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 3v6M12 15v6M3 12h6M15 12h6"></path>
+        </svg>
+      </div>`,
+      tooltip: 'Subtitle Colour',
+      click() { toggleColorWheel(); },
+    });
+
         // ── Rewind 10s (Left Side) ──
     customControls.push({
       name: 'rewind-10',
@@ -2139,6 +2217,66 @@ export default function NetMirrorPlayer({
             font-size: 10.5px !important;
             padding: 0 10px !important;
           }
+        }
+
+        /* ── Subtitle colour wheel popover ── */
+        .nm-wheel-pop {
+          position: absolute !important;
+          right: 12px !important;
+          bottom: 60px !important;
+          width: 228px !important;
+          padding: 10px !important;
+          border-radius: 14px !important;
+          background: rgba(10, 10, 16, 0.96) !important;
+          border: 1px solid rgba(255, 255, 255, 0.12) !important;
+          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7) !important;
+          backdrop-filter: blur(10px) !important;
+          z-index: 80 !important;
+          color: rgba(255, 255, 255, 0.9) !important;
+        }
+        .nm-wheel-head {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+          font-size: 11px !important;
+          font-weight: 700 !important;
+          letter-spacing: 0.02em !important;
+          padding: 0 2px 6px !important;
+        }
+        .nm-wheel-preview {
+          width: 16px !important;
+          height: 16px !important;
+          border-radius: 50% !important;
+          border: 1px solid rgba(255, 255, 255, 0.45) !important;
+          display: inline-block !important;
+        }
+        .nm-wheel {
+          position: relative !important;
+          width: 208px !important;
+          height: 208px !important;
+        }
+        .nm-dot {
+          position: absolute !important;
+          padding: 0 !important;
+          border-radius: 50% !important;
+          border: 2px solid transparent !important;
+          cursor: pointer !important;
+          box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35) !important;
+          transition: transform 0.12s ease !important;
+        }
+        .nm-dot:hover { transform: scale(1.18) !important; }
+        .nm-dot.on {
+          border-color: #fff !important;
+          box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.65) !important;
+        }
+        .nm-wheel-foot {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+          font-size: 10px !important;
+          color: rgba(255, 255, 255, 0.55) !important;
+          padding: 6px 2px 0 !important;
+          font-variant-numeric: tabular-nums !important;
         }
 
         @media (max-width: 480px) {
